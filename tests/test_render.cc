@@ -81,14 +81,14 @@ TEST(render_test, main_menu_color_paints_banner_cyan_and_build_dim) {
     EXPECT_NE(out.find("\x1b[2m"), std::string::npos);   // dim build-info / rule
 }
 
-TEST(render_test, main_menu_items_helper_renders_2col_with_cursor) {
+TEST(render_test, menu_items_helper_renders_2col_with_cursor) {
     std::vector<avail::MenuItem> items{
         {"alpha-long-label", "a", "first desc"},
         {"bravo", "b", "second desc"},
         {"charlie", "c", ""},
     };
     std::ostringstream os;
-    avail::render_main_menu_items(os, color_off(), items, 1);
+    avail::render_menu_items(os, color_off(), items, 1);
     const auto out = os.str();
     EXPECT_NE(out.find("  alpha-long-label      first desc"), std::string::npos);
     EXPECT_NE(out.find("> bravo"), std::string::npos);
@@ -449,6 +449,62 @@ TEST(render_test, preset_preview_empty_shows_hint) {
     std::ostringstream os;
     avail::render_preset_preview(os, color_off(), s, devs);
     EXPECT_NE(os.str().find("empty"), std::string::npos);
+}
+
+// --- Uniform menu-item shape across every menu screen ---
+//
+// Mode select / create session / preset preview must all use the cursor +
+// label + dim description shape that the main menu does. No leftover
+// "  1." / "  2." numbered-list output anywhere.
+
+TEST(render_test, mode_select_uses_cursor_and_descriptions) {
+    std::ostringstream os;
+    avail::render_mode_select(os, color_off());
+    const auto out = os.str();
+    EXPECT_NE(out.find("> Online"), std::string::npos);
+    EXPECT_NE(out.find("This machine, real-ish data"), std::string::npos);
+    EXPECT_NE(out.find("Generic device classes, aspirational"), std::string::npos);
+    EXPECT_EQ(out.find("  1. "), std::string::npos);
+    EXPECT_EQ(out.find("  2. "), std::string::npos);
+    EXPECT_EQ(out.find("  3. "), std::string::npos);
+}
+
+TEST(render_test, create_session_empty_description_says_empty) {
+    avail::SessionState s;
+    std::ostringstream os;
+    avail::render_create_session(os, color_off(), avail::CatalogMode::Online, "this machine", s);
+    const auto out = os.str();
+    EXPECT_NE(out.find("> Devices..."), std::string::npos);
+    EXPECT_NE(out.find("Browse and toggle metrics"), std::string::npos);
+    EXPECT_NE(out.find("View preset preview"), std::string::npos);
+    EXPECT_NE(out.find("(empty - select metrics first)"), std::string::npos);
+    EXPECT_EQ(out.find("  1. "), std::string::npos);
+    EXPECT_EQ(out.find("  2. "), std::string::npos);
+    EXPECT_EQ(out.find("  3. "), std::string::npos);
+}
+
+TEST(render_test, create_session_populated_description_reflects_summary) {
+    avail::SessionState s;
+    s.toggle_metric("gpu0", "sq.waves");
+    std::ostringstream os;
+    avail::render_create_session(os, color_off(), avail::CatalogMode::Online, "this machine", s);
+    const auto out = os.str();
+    EXPECT_NE(out.find("View preset preview"), std::string::npos);
+    EXPECT_NE(out.find(s.summary()), std::string::npos);
+    EXPECT_EQ(out.find("(empty - select metrics first)"), std::string::npos);
+}
+
+TEST(render_test, preset_preview_uses_cursor_and_descriptions) {
+    avail::SessionState s;
+    std::vector<avail::Device> devs;
+    std::ostringstream os;
+    avail::render_preset_preview(os, color_off(), s, devs);
+    const auto out = os.str();
+    EXPECT_NE(out.find("> Clear preset"), std::string::npos);
+    EXPECT_NE(out.find("Reset all metric selections"), std::string::npos);
+    EXPECT_NE(out.find("  Back"), std::string::npos);
+    EXPECT_EQ(out.find("  1. "), std::string::npos);
+    EXPECT_EQ(out.find("  2. "), std::string::npos);
 }
 
 }  // namespace

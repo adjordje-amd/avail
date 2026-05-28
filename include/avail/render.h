@@ -69,14 +69,16 @@ void render_main_menu(std::ostream& out, const RenderConfig& cfg);
 void render_banner(std::ostream& out, const RenderConfig& cfg);
 
 /**
- * Render the main-menu item list in 2-column layout: left-aligned label
- * padded to the widest label across @p items, then a fixed gutter, then
- * the per-item description (dim when colour is on, omitted entirely when
- * empty). The row matching @p selected_index is prefixed with "> ", all
- * others with "  ".
+ * Render a menu item list in 2-column layout: left-aligned label padded to
+ * the widest label across @p items, then a fixed gutter, then the per-item
+ * description (dim when colour is on, omitted entirely when empty). The row
+ * matching @p selected_index is prefixed with "> ", all others with "  ".
+ *
+ * Shared across every menu screen (main menu, mode select, create session,
+ * preset preview) so item rendering stays uniform.
  */
-void render_main_menu_items(std::ostream& out, const RenderConfig& cfg,
-                            const std::vector<MenuItem>& items, std::size_t selected_index);
+void render_menu_items(std::ostream& out, const RenderConfig& cfg,
+                       const std::vector<MenuItem>& items, std::size_t selected_index);
 void render_mode_select(std::ostream& out, const RenderConfig& cfg);
 void render_create_session(std::ostream& out, const RenderConfig& cfg, CatalogMode mode,
                            std::string_view catalog_label, const SessionState& session);

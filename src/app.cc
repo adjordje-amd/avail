@@ -56,21 +56,19 @@ std::vector<MenuItem> build_main_menu() {
 
 std::vector<MenuItem> build_mode_select_menu() {
     return {
-        {"Online  (this machine, real-ish data)", kIdOnline},
-        {"Offline (generic device classes, aspirational)", kIdOffline},
-        {"Back", kIdBack},
+        {"Online", kIdOnline, "This machine, real-ish data"},
+        {"Offline", kIdOffline, "Generic device classes, aspirational"},
+        {"Back", kIdBack, ""},
     };
 }
 
 std::vector<MenuItem> build_create_session_menu(const SessionState& session) {
+    std::string preview_desc =
+        session.is_empty() ? std::string{"(empty - select metrics first)"} : session.summary();
     std::vector<MenuItem> items;
-    items.push_back({"Devices...", kIdDevices});
-    if (session.is_empty()) {
-        items.push_back({"View preset preview (empty - select metrics first)", kIdPreview});
-    } else {
-        items.push_back({"View preset preview (" + session.summary() + ")", kIdPreview});
-    }
-    items.push_back({"Back", kIdBack});
+    items.push_back({"Devices...", kIdDevices, "Browse and toggle metrics"});
+    items.push_back({"View preset preview", kIdPreview, std::move(preview_desc)});
+    items.push_back({"Back", kIdBack, ""});
     return items;
 }
 
@@ -136,8 +134,8 @@ std::vector<MenuItem> build_device_detail_menu(const Device& device, const Sessi
 
 std::vector<MenuItem> build_preset_preview_menu() {
     return {
-        {"Clear preset", kIdClear},
-        {"Back", kIdBack},
+        {"Clear preset", kIdClear, "Reset all metric selections"},
+        {"Back", kIdBack, ""},
     };
 }
 
@@ -340,19 +338,17 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
 
         const bool is_device_list_screen =
             current == Screen::CreateDeviceList || current == Screen::InspectDeviceList;
-        const bool is_main_menu_screen = current == Screen::MainMenu;
+        const bool uses_shared_menu_items =
+            current == Screen::MainMenu || current == Screen::CreateModeSelect ||
+            current == Screen::CreateSession || current == Screen::PresetPreview;
 
         while (!committed && !exit_now && !back_now) {
             render_header(devices);
             if (is_device_list_screen) {
                 // render_device_list_screen already emits open+body+close.
                 render_device_list_screen(out, cfg, devices, menu.selected_index());
-            } else if (is_main_menu_screen) {
-                render_main_menu_items(out, cfg, menu.items(), menu.selected_index());
-                out << '\n';
-                render_chrome_close(out, cfg, footer_hints_for_main_menu());
-            } else {
-                menu.render(out, cfg);
+            } else if (uses_shared_menu_items) {
+                render_menu_items(out, cfg, menu.items(), menu.selected_index());
                 out << '\n';
                 std::string_view hints;
                 switch (current) {
@@ -362,12 +358,22 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                 case Screen::CreateSession:
                     hints = footer_hints_for_create_session();
                     break;
+                case Screen::PresetPreview:
+                    hints = footer_hints_for_preset_preview();
+                    break;
+                default:
+                    hints = footer_hints_for_main_menu();
+                    break;
+                }
+                render_chrome_close(out, cfg, hints);
+            } else {
+                menu.render(out, cfg);
+                out << '\n';
+                std::string_view hints;
+                switch (current) {
                 case Screen::CreateDeviceDetail:
                 case Screen::InspectDeviceDetail:
                     hints = footer_hints_for_device_detail();
-                    break;
-                case Screen::PresetPreview:
-                    hints = footer_hints_for_preset_preview();
                     break;
                 case Screen::ConfirmClearAll:
                 case Screen::ConfirmClearDevice:
@@ -592,6 +598,8 @@ int App::run_demo_frames(std::ostream& out, const RenderConfig& cfg) {
     if (!online.empty() && !online[0].measure.empty()) {
         session.toggle_metric(online[0].slot, online[0].measure[0].name);
     }
+    render_create_session(out, cfg, CatalogMode::Online, m_online.label(), session);
+    sep();
     render_preset_preview(out, cfg, session, online);
     out << synthesize_command(session, online) << '\n';
     sep();

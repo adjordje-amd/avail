@@ -279,8 +279,8 @@ void render_chrome_close(std::ostream& out, const RenderConfig& cfg,
     chrome_rule(out, ansi, cfg);
 }
 
-void render_main_menu_items(std::ostream& out, const RenderConfig& cfg,
-                            const std::vector<MenuItem>& items, std::size_t selected_index) {
+void render_menu_items(std::ostream& out, const RenderConfig& cfg,
+                       const std::vector<MenuItem>& items, std::size_t selected_index) {
     const auto ansi = make_ansi(cfg);
     std::size_t label_width = 0;
     for (const auto& item : items) {
@@ -303,38 +303,61 @@ void render_main_menu_items(std::ostream& out, const RenderConfig& cfg,
 void render_main_menu(std::ostream& out, const RenderConfig& cfg) {
     render_chrome_open(out, cfg, "Main Menu");
     const auto items = build_main_menu_items_local();
-    render_main_menu_items(out, cfg, items, 0);
+    render_menu_items(out, cfg, items, 0);
     out << '\n';
     render_chrome_close(out, cfg, kFooterHintsMainMenu);
 }
 
+namespace {
+
+std::vector<MenuItem> build_mode_select_items_local() {
+    return {
+        {"Online", "online", "This machine, real-ish data"},
+        {"Offline", "offline", "Generic device classes, aspirational"},
+        {"Back", "back", ""},
+    };
+}
+
+std::vector<MenuItem> build_create_session_items_local(const SessionState& session) {
+    std::string preview_desc;
+    if (session.is_empty()) {
+        preview_desc = "(empty - select metrics first)";
+    } else {
+        preview_desc = session.summary();
+    }
+    return {
+        {"Devices...", "devices", "Browse and toggle metrics"},
+        {"View preset preview", "preview", std::move(preview_desc)},
+        {"Back", "back", ""},
+    };
+}
+
+std::vector<MenuItem> build_preset_preview_items_local() {
+    return {
+        {"Clear preset", "clear", "Reset all metric selections"},
+        {"Back", "back", ""},
+    };
+}
+
+}  // namespace
+
 void render_mode_select(std::ostream& out, const RenderConfig& cfg) {
     render_chrome_open(out, cfg, "Create config - choose catalog mode");
-    out << "  1. Online  (this machine, real-ish data)\n";
-    out << "  2. Offline (generic device classes, aspirational)\n";
-    out << "  3. Back\n";
+    const auto items = build_mode_select_items_local();
+    render_menu_items(out, cfg, items, 0);
     out << '\n';
     render_chrome_close(out, cfg, kFooterHintsModeSelect);
 }
 
 void render_create_session(std::ostream& out, const RenderConfig& cfg, CatalogMode mode,
                            std::string_view catalog_label, const SessionState& session) {
-    const auto ansi = make_ansi(cfg);
     std::string title = "Create config session [";
     title.append(catalog_label);
     title.append("] - ");
     title.append(mode_label(mode));
     render_chrome_open(out, cfg, title);
-
-    out << "  1. Devices...\n";
-    if (!session.is_empty()) {
-        out << "  2. View preset preview (" << ansi.cyan << session.summary() << ansi.reset
-            << ")\n";
-    } else {
-        out << "  2. View preset preview " << ansi.dim << "(empty - select metrics first)"
-            << ansi.reset << '\n';
-    }
-    out << "  3. Back\n";
+    const auto items = build_create_session_items_local(session);
+    render_menu_items(out, cfg, items, 0);
     out << '\n';
     render_chrome_close(out, cfg, kFooterHintsCreateSession);
 }
@@ -569,8 +592,8 @@ void render_preset_preview(std::ostream& out, const RenderConfig& cfg, const Ses
             << '\n';
     }
     out << '\n';
-    out << "  1. Clear preset\n";
-    out << "  2. Back\n";
+    const auto items = build_preset_preview_items_local();
+    render_menu_items(out, cfg, items, 0);
     out << '\n';
     render_chrome_close(out, cfg, kFooterHintsPresetPreview);
 }
@@ -606,19 +629,12 @@ void render_mode_select_header(std::ostream& out, const RenderConfig& cfg) {
 
 void render_create_session_header(std::ostream& out, const RenderConfig& cfg, CatalogMode mode,
                                   std::string_view catalog_label, const SessionState& session) {
-    const auto ansi = make_ansi(cfg);
+    (void) session;
     std::string title = "Create config session [";
     title.append(catalog_label);
     title.append("] - ");
     title.append(mode_label(mode));
     render_chrome_open(out, cfg, title);
-    if (!session.is_empty()) {
-        out << "Current preset: " << ansi.cyan << session.summary() << ansi.reset << '\n';
-        out << '\n';
-    } else {
-        out << ansi.dim << "Preset is empty - select metrics first." << ansi.reset << '\n';
-        out << '\n';
-    }
 }
 
 void render_device_list_header(std::ostream& out, const RenderConfig& cfg) {
