@@ -4,8 +4,10 @@
 #include "avail/screens.h"
 #include "avail/session.h"
 
+#include <cstdint>
 #include <ostream>
 #include <profcat/descriptor.hpp>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -40,9 +42,11 @@ void render_create_session(std::ostream& out, const RenderConfig& cfg, CatalogMo
 void render_device_list(std::ostream& out, const RenderConfig& cfg,
                         const std::vector<Device>& devices, bool show_back);
 void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Device& device,
-                          const SessionState* session_or_null);
+                          const SessionState* session_or_null,
+                          std::span<const std::uint32_t> supported_ids);
 void render_metric_detail(std::ostream& out, const RenderConfig& cfg,
-                          const profcat::MetricDescriptor& metric, bool aspirational);
+                          const profcat::MetricDescriptor& metric, bool aspirational,
+                          bool supported);
 void render_preset_preview(std::ostream& out, const RenderConfig& cfg, const SessionState& session,
                            const std::vector<Device>& devices);
 void render_confirm(std::ostream& out, const RenderConfig& cfg, std::string_view question);
@@ -64,11 +68,21 @@ void render_create_session_header(std::ostream& out, const RenderConfig& cfg, Ca
                                   std::string_view catalog_label, const SessionState& session);
 void render_device_list_header(std::ostream& out, const RenderConfig& cfg);
 void render_device_detail_header(std::ostream& out, const RenderConfig& cfg, const Device& device,
-                                 const SessionState* session_or_null);
+                                 const SessionState* session_or_null,
+                                 std::span<const std::uint32_t> supported_ids);
 void render_preset_preview_header(std::ostream& out, const RenderConfig& cfg,
                                   const SessionState& session);
 
 /** Strip ANSI CSI sequences from input. Used by --no-color regression test. */
 [[nodiscard]] std::string strip_ansi(std::string_view input);
+
+/**
+ * Return the metric indices (positions in @p metrics) ordered first by
+ * Stage (Cpu, Memory, Interconnect, Submission, Gpu, DeviceTelemetry,
+ * ApuFabric) then alphabetically by name. Used by both the menu builder
+ * and the renderer so visible row N matches menu item N.
+ */
+[[nodiscard]] std::vector<std::size_t>
+stage_sorted_indices(std::span<const profcat::MetricDescriptor> metrics);
 
 }  // namespace avail

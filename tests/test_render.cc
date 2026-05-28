@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include <profcat/catalog.hpp>
 #include <profcat/descriptor.hpp>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -77,15 +78,41 @@ TEST(render_test, strip_ansi_passes_through_plain_text) {
 TEST(render_test, aspirational_badge_present_when_metric_is_aspirational) {
     const auto& m = lookup_or_die(0x6001);  // derived valu_util
     std::ostringstream os;
-    avail::render_metric_detail(os, color_off(), m, true);
+    avail::render_metric_detail(os, color_off(), m, true, true);
     EXPECT_NE(os.str().find("[demo: proposed UX]"), std::string::npos);
 }
 
 TEST(render_test, non_aspirational_metric_has_no_badge) {
     const auto& m = lookup_or_die(0x6004);  // derived ipc
     std::ostringstream os;
-    avail::render_metric_detail(os, color_off(), m, false);
+    avail::render_metric_detail(os, color_off(), m, false, true);
     EXPECT_EQ(os.str().find("[demo: proposed UX]"), std::string::npos);
+}
+
+TEST(render_test, metric_detail_unsupported_shows_red_badge_off_color) {
+    const auto& m = lookup_or_die(0x6004);
+    std::ostringstream os;
+    avail::render_metric_detail(os, color_off(), m, false, false);
+    EXPECT_NE(os.str().find("[unsupported]"), std::string::npos);
+}
+
+TEST(render_test, metric_detail_supported_shows_supported_badge) {
+    const auto& m = lookup_or_die(0x6004);
+    std::ostringstream os;
+    avail::render_metric_detail(os, color_off(), m, false, true);
+    EXPECT_NE(os.str().find("[supported]"), std::string::npos);
+}
+
+TEST(render_test, metric_detail_includes_five_field_block) {
+    const auto& m = lookup_or_die(0x2001);  // sq.waves
+    std::ostringstream os;
+    avail::render_metric_detail(os, color_off(), m, false, true);
+    const auto out = os.str();
+    EXPECT_NE(out.find("Name:"), std::string::npos);
+    EXPECT_NE(out.find("Description:"), std::string::npos);
+    EXPECT_NE(out.find("Track:"), std::string::npos);
+    EXPECT_NE(out.find("Unit:"), std::string::npos);
+    EXPECT_NE(out.find("Group:"), std::string::npos);
 }
 
 TEST(render_test, device_detail_shows_checkbox_when_session_provided) {
@@ -98,8 +125,9 @@ TEST(render_test, device_detail_shows_checkbox_when_session_provided) {
     d.measure = {sq_waves};
     avail::SessionState s;
     s.toggle_metric("gpu0", sq_waves.name);
+    std::uint32_t supported_arr[] = {sq_waves.id};
     std::ostringstream os;
-    avail::render_device_detail(os, color_off(), d, &s);
+    avail::render_device_detail(os, color_off(), d, &s, supported_arr);
     EXPECT_NE(os.str().find("[x]"), std::string::npos);
 }
 
@@ -111,10 +139,42 @@ TEST(render_test, device_detail_no_checkbox_when_session_null) {
     d.identity = "test";
     d.supported = true;
     d.measure = {sq_waves};
+    std::uint32_t supported_arr[] = {sq_waves.id};
     std::ostringstream os;
-    avail::render_device_detail(os, color_off(), d, nullptr);
+    avail::render_device_detail(os, color_off(), d, nullptr, supported_arr);
     EXPECT_EQ(os.str().find("[x]"), std::string::npos);
     EXPECT_EQ(os.str().find("[ ]"), std::string::npos);
+}
+
+TEST(render_test, device_detail_renders_stage_heading) {
+    const auto& sq_waves = lookup_or_die(0x2001);  // Stage::Gpu
+    avail::Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "test";
+    d.supported = true;
+    d.measure = {sq_waves};
+    std::uint32_t supported_arr[] = {sq_waves.id};
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported_arr);
+    EXPECT_NE(os.str().find("[GPU]"), std::string::npos);
+}
+
+TEST(render_test, device_detail_supported_and_unsupported_badges_per_metric) {
+    const auto& sq_waves = lookup_or_die(0x2001);
+    const auto& sdma_busy = lookup_or_die(0x200B);
+    avail::Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "test";
+    d.supported = true;
+    d.measure = {sq_waves, sdma_busy};
+    std::uint32_t supported_arr[] = {sq_waves.id};  // sdma_busy missing
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported_arr);
+    const auto out = os.str();
+    EXPECT_NE(out.find("[supported]"), std::string::npos);
+    EXPECT_NE(out.find("[unsupported]"), std::string::npos);
 }
 
 TEST(render_test, unsupported_device_renders_reason) {
@@ -125,8 +185,18 @@ TEST(render_test, unsupported_device_renders_reason) {
     d.supported = false;
     d.unsupported_reason = std::string("no counters");
     std::ostringstream os;
-    avail::render_device_detail(os, color_off(), d, nullptr);
+    avail::render_device_detail(os, color_off(), d, nullptr, std::span<const std::uint32_t>{});
     EXPECT_NE(os.str().find("no counters"), std::string::npos);
+}
+
+TEST(render_test, stage_sorted_indices_groups_by_stage) {
+    const auto& sq_waves = lookup_or_die(0x2001);    // Stage::Gpu
+    const auto& cpu_cycles = lookup_or_die(0x4004);  // Stage::Cpu
+    std::vector<profcat::MetricDescriptor> ms = {sq_waves, cpu_cycles};
+    const auto idx = avail::stage_sorted_indices(ms);
+    ASSERT_EQ(idx.size(), 2U);
+    EXPECT_EQ(ms[idx[0]].id, 0x4004U);  // Cpu first
+    EXPECT_EQ(ms[idx[1]].id, 0x2001U);  // Gpu second
 }
 
 TEST(render_test, preset_preview_empty_shows_hint) {

@@ -4,11 +4,13 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <map>
 #include <profcat/catalog.hpp>
 #include <profcat/descriptor.hpp>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace avail {
@@ -209,6 +211,35 @@ MockOnlineMetricCatalog::aspirational_ids(std::string_view slot) const {
     const Device* d = find_slot(slot);
     return d ? std::span<const std::uint32_t>{d->aspirational_metric_ids}
              : std::span<const std::uint32_t>{};
+}
+
+namespace {
+
+const std::vector<std::uint32_t>& supported_ids_for(std::string_view slot) {
+    static const std::map<std::string, std::vector<std::uint32_t>> kCache = [] {
+        std::map<std::string, std::vector<std::uint32_t>> m;
+        for (const auto& d : cached_devices()) {
+            std::vector<std::uint32_t> ids;
+            ids.reserve(d.measure.size() + d.configure.size());
+            for (const auto& md : d.measure) {
+                ids.push_back(md.id);
+            }
+            for (const auto& md : d.configure) {
+                ids.push_back(md.id);
+            }
+            m.emplace(d.slot, std::move(ids));
+        }
+        return m;
+    }();
+    static const std::vector<std::uint32_t> kEmpty;
+    const auto it = kCache.find(std::string(slot));
+    return it == kCache.end() ? kEmpty : it->second;
+}
+
+}  // namespace
+
+std::span<const std::uint32_t> MockOnlineMetricCatalog::supported_ids(std::string_view slot) const {
+    return supported_ids_for(slot);
 }
 
 std::string MockOnlineRocmVersion::version() const {

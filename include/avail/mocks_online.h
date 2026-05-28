@@ -34,6 +34,8 @@ class MockOnlineMetricCatalog final : public IMetricCatalog {
     configure_metrics(std::string_view slot) const override;
     [[nodiscard]] std::span<const std::uint32_t>
     aspirational_ids(std::string_view slot) const override;
+    [[nodiscard]] std::span<const std::uint32_t>
+    supported_ids(std::string_view slot) const override;
 };
 
 class MockOnlineRocmVersion final : public IRocmVersion {

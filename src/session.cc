@@ -1,9 +1,13 @@
 #include "avail/session.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <numeric>
+#include <profcat/descriptor.hpp>
 #include <set>
 #include <sstream>
+#include <string>
+#include <string_view>
 
 namespace avail {
 
@@ -48,15 +52,45 @@ bool SessionState::has_configure(std::string_view slot, std::string_view name) c
     return contains_in(m_configures, slot, name);
 }
 
+void SessionState::seed_defaults(std::string_view slot,
+                                 std::span<const profcat::MetricDescriptor> measure,
+                                 std::span<const profcat::MetricDescriptor> configure,
+                                 std::span<const std::uint32_t> supported) {
+    const std::string key(slot);
+    if (m_seeded_slots.count(key) != 0) {
+        return;
+    }
+    m_seeded_slots.insert(key);
+    const auto is_supported = [&](std::uint32_t id) {
+        return std::find(supported.begin(), supported.end(), id) != supported.end();
+    };
+    for (const auto& m : measure) {
+        if (m.default_enabled && is_supported(m.id)) {
+            m_metrics[key].insert(std::string{m.name});
+        }
+    }
+    for (const auto& m : configure) {
+        if (m.default_enabled && is_supported(m.id)) {
+            m_configures[key].insert(std::string{m.name});
+        }
+    }
+}
+
+bool SessionState::is_seeded(std::string_view slot) const {
+    return m_seeded_slots.count(std::string(slot)) != 0;
+}
+
 void SessionState::clear_device(std::string_view slot) {
     const std::string key(slot);
     m_metrics.erase(key);
     m_configures.erase(key);
+    m_seeded_slots.erase(key);
 }
 
 void SessionState::clear_all() noexcept {
     m_metrics.clear();
     m_configures.clear();
+    m_seeded_slots.clear();
 }
 
 std::size_t SessionState::metric_count() const noexcept {

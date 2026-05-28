@@ -88,6 +88,35 @@ TEST(mocks_offline_test, has_three_devices_one_per_class) {
     EXPECT_EQ(devs[2].kind, "AINIC");
 }
 
+TEST(mocks_online_test, supported_ids_covers_all_measure_and_configure) {
+    avail::MockOnlineDeviceCatalog dev_cat;
+    avail::MockOnlineMetricCatalog metric_cat;
+    const auto gpu0 = dev_cat.devices()[1];
+    const auto supported = metric_cat.supported_ids("gpu0");
+    EXPECT_EQ(supported.size(), gpu0.measure.size() + gpu0.configure.size());
+    for (const auto& m : gpu0.measure) {
+        EXPECT_NE(std::find(supported.begin(), supported.end(), m.id), supported.end())
+            << "missing id 0x" << std::hex << m.id;
+    }
+    for (const auto& m : gpu0.configure) {
+        EXPECT_NE(std::find(supported.begin(), supported.end(), m.id), supported.end())
+            << "missing id 0x" << std::hex << m.id;
+    }
+}
+
+TEST(mocks_online_test, supported_ids_empty_for_unknown_slot) {
+    avail::MockOnlineMetricCatalog cat;
+    EXPECT_TRUE(cat.supported_ids("does_not_exist").empty());
+}
+
+TEST(mocks_offline_test, supported_ids_covers_all_metrics) {
+    avail::MockOfflineDeviceCatalog dev_cat;
+    avail::MockOfflineMetricCatalog metric_cat;
+    const auto gpu0 = dev_cat.devices()[1];
+    const auto supported = metric_cat.supported_ids("gpu0");
+    EXPECT_EQ(supported.size(), gpu0.measure.size() + gpu0.configure.size());
+}
+
 TEST(mocks_offline_test, every_metric_is_aspirational) {
     avail::MockOfflineDeviceCatalog cat;
     const auto devs = cat.devices();

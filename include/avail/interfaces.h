@@ -47,6 +47,17 @@ class IMetricCatalog {
      */
     [[nodiscard]] virtual std::span<const std::uint32_t>
     aspirational_ids(std::string_view device_slot) const = 0;
+
+    /**
+     * All metric ids known to be supported by @p device_slot.
+     *
+     * Used as a UX-layer gate: a default_enabled hint from profcat is only
+     * honored when the id appears in this list. Aspirational ids may or may
+     * not appear here depending on whether the slot exposes the descriptor
+     * at all.
+     */
+    [[nodiscard]] virtual std::span<const std::uint32_t>
+    supported_ids(std::string_view device_slot) const = 0;
 };
 
 /**

@@ -1,8 +1,11 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
+#include <profcat/descriptor.hpp>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -17,6 +20,22 @@ class SessionState {
   public:
     void toggle_metric(std::string_view slot, std::string_view name);
     void toggle_configure(std::string_view slot, std::string_view name);
+
+    /**
+     * Seed the starter selection for @p slot from the catalog defaults.
+     *
+     * For each descriptor in @p metrics whose id appears in @p supported AND
+     * whose default_enabled flag is true, the metric/configure name is added
+     * to the session if not already present. Manual selections are preserved.
+     *
+     * Idempotent: subsequent calls for the same slot are no-ops, so revisiting
+     * a device-detail screen does not re-seed metrics the user toggled off.
+     */
+    void seed_defaults(std::string_view slot, std::span<const profcat::MetricDescriptor> measure,
+                       std::span<const profcat::MetricDescriptor> configure,
+                       std::span<const std::uint32_t> supported);
+
+    [[nodiscard]] bool is_seeded(std::string_view slot) const;
 
     [[nodiscard]] bool has_metric(std::string_view slot, std::string_view name) const;
     [[nodiscard]] bool has_configure(std::string_view slot, std::string_view name) const;
@@ -43,6 +62,7 @@ class SessionState {
   private:
     std::map<std::string, std::set<std::string>> m_metrics;
     std::map<std::string, std::set<std::string>> m_configures;
+    std::set<std::string> m_seeded_slots;
 };
 
 }  // namespace avail

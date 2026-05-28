@@ -8,10 +8,12 @@
 #include "avail/synthesize.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <istream>
 #include <ostream>
 #include <profcat/descriptor.hpp>
 #include <profcat/enums.hpp>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,6 +23,15 @@ namespace avail {
 namespace {
 
 constexpr const char* kSeparator = "---";
+
+bool id_in_span(std::span<const std::uint32_t> ids, std::uint32_t id) noexcept {
+    for (std::uint32_t v : ids) {
+        if (v == id) {
+            return true;
+        }
+    }
+    return false;
+}
 
 // id tokens used by MenuItem.id; opaque to render code.
 constexpr const char* kIdBack = "back";
@@ -78,7 +89,11 @@ std::vector<MenuItem> build_device_list_menu(const std::vector<Device>& devices)
 }
 
 // Per-device metric menu. Metric ids: "m:<index>" (measure) or "c:<index>"
-// (configure). Housekeeping rows use kIdClear / kIdBack.
+// (configure). Indices reference the ORIGINAL device.measure / device.configure
+// vectors; rendering order is stage-sorted via stage_sorted_indices so visible
+// row N maps to menu item N regardless of the catalog's storage order.
+//
+// Housekeeping rows use kIdClear / kIdBack.
 std::vector<MenuItem> build_device_detail_menu(const Device& device, const SessionState& session,
                                                bool with_session) {
     std::vector<MenuItem> items;
@@ -87,25 +102,27 @@ std::vector<MenuItem> build_device_detail_menu(const Device& device, const Sessi
         return items;
     }
     items.reserve(device.measure.size() + device.configure.size() + 2);
-    for (std::size_t i = 0; i < device.measure.size(); ++i) {
-        const auto& m = device.measure[i];
+    const auto measure_order = stage_sorted_indices(device.measure);
+    for (std::size_t pos : measure_order) {
+        const auto& m = device.measure[pos];
         const bool on = with_session && session.has_metric(device.slot, m.name);
         std::string label = std::string{with_session ? (on ? "[x] " : "[ ] ") : "    "};
         label.append(m.display_name);
         label.append(" (");
         label.append(profcat::to_string(m.unit));
         label.append(")");
-        items.push_back({std::move(label), "m:" + std::to_string(i)});
+        items.push_back({std::move(label), "m:" + std::to_string(pos)});
     }
-    for (std::size_t i = 0; i < device.configure.size(); ++i) {
-        const auto& m = device.configure[i];
+    const auto configure_order = stage_sorted_indices(device.configure);
+    for (std::size_t pos : configure_order) {
+        const auto& m = device.configure[pos];
         const bool on = with_session && session.has_configure(device.slot, m.name);
         std::string label = std::string{with_session ? (on ? "[x] " : "[ ] ") : "    "};
         label.append(m.display_name);
         label.append(" (");
         label.append(profcat::to_string(m.unit));
         label.append(")");
-        items.push_back({std::move(label), "c:" + std::to_string(i)});
+        items.push_back({std::move(label), "c:" + std::to_string(pos)});
     }
     if (with_session) {
         items.push_back({"Clear this device's selections", kIdClear});
@@ -155,8 +172,6 @@ App::App(IDeviceCatalog& online, IDeviceCatalog& offline, IMetricCatalog& online
          IMetricCatalog& offline_metrics, IRocmVersion& rocm, ILibraryEnv& libs)
     : m_online(online), m_offline(offline), m_online_metrics(online_metrics),
       m_offline_metrics(offline_metrics), m_rocm(rocm), m_libs(libs) {
-    (void) m_online_metrics;
-    (void) m_offline_metrics;
     (void) m_rocm;
     (void) m_libs;
 }
@@ -184,6 +199,15 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
         return mode == CatalogMode::Online ? m_online : m_offline;
     };
 
+    auto active_metric_catalog = [&]() -> IMetricCatalog& {
+        if (current == Screen::InspectDeviceList || current == Screen::InspectDeviceDetail ||
+            (current == Screen::MetricDetail &&
+             metric_detail_return == Screen::InspectDeviceDetail)) {
+            return m_online_metrics;
+        }
+        return mode == CatalogMode::Online ? m_online_metrics : m_offline_metrics;
+    };
+
     auto render_header = [&](const std::vector<Device>& devices) {
         out << kClearScreen;
         switch (current) {
@@ -206,12 +230,16 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             break;
         case Screen::CreateDeviceDetail:
             if (active_device < devices.size()) {
-                render_device_detail_header(out, cfg, devices[active_device], &session);
+                const auto& dev = devices[active_device];
+                const auto supported = active_metric_catalog().supported_ids(dev.slot);
+                render_device_detail_header(out, cfg, dev, &session, supported);
             }
             break;
         case Screen::InspectDeviceDetail:
             if (active_device < devices.size()) {
-                render_device_detail_header(out, cfg, devices[active_device], nullptr);
+                const auto& dev = devices[active_device];
+                const auto supported = active_metric_catalog().supported_ids(dev.slot);
+                render_device_detail_header(out, cfg, dev, nullptr, supported);
             }
             break;
         case Screen::PresetPreview:
@@ -229,13 +257,16 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
         case Screen::MetricDetail:
             if (active_device < devices.size()) {
                 const auto& dev = devices[active_device];
+                const auto supported = active_metric_catalog().supported_ids(dev.slot);
                 const auto total_measure = dev.measure.size();
                 if (active_metric < total_measure) {
                     const auto& md = dev.measure[active_metric];
-                    render_metric_detail(out, cfg, md, is_aspirational(dev, md));
+                    render_metric_detail(out, cfg, md, is_aspirational(dev, md),
+                                         id_in_span(supported, md.id));
                 } else if (active_metric - total_measure < dev.configure.size()) {
                     const auto& md = dev.configure[active_metric - total_measure];
-                    render_metric_detail(out, cfg, md, is_aspirational(dev, md));
+                    render_metric_detail(out, cfg, md, is_aspirational(dev, md),
+                                         id_in_span(supported, md.id));
                 }
             }
             out << '\n' << "(Press Enter, Esc, q, or b to go back)\n";
@@ -412,8 +443,16 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             for (std::size_t i = 0; i < devices.size(); ++i) {
                 if (devices[i].slot == id) {
                     active_device = i;
-                    current = (current == Screen::CreateDeviceList) ? Screen::CreateDeviceDetail
-                                                                    : Screen::InspectDeviceDetail;
+                    const bool entering_create = (current == Screen::CreateDeviceList);
+                    current =
+                        entering_create ? Screen::CreateDeviceDetail : Screen::InspectDeviceDetail;
+                    if (entering_create && !session.is_seeded(devices[i].slot)) {
+                        auto& mc =
+                            (mode == CatalogMode::Online) ? m_online_metrics : m_offline_metrics;
+                        session.seed_defaults(devices[i].slot, mc.measure_metrics(devices[i].slot),
+                                              mc.configure_metrics(devices[i].slot),
+                                              mc.supported_ids(devices[i].slot));
+                    }
                     break;
                 }
             }
@@ -507,7 +546,8 @@ int App::run_demo_frames(std::ostream& out, const RenderConfig& cfg) {
     render_device_list(out, cfg, online, true);
     sep();
     if (!online.empty()) {
-        render_device_detail(out, cfg, online[0], &session);
+        const auto supported = m_online_metrics.supported_ids(online[0].slot);
+        render_device_detail(out, cfg, online[0], &session, supported);
         sep();
     }
     if (!online.empty() && !online[0].measure.empty()) {
@@ -522,7 +562,8 @@ int App::run_demo_frames(std::ostream& out, const RenderConfig& cfg) {
     render_device_list(out, cfg, offline, true);
     sep();
     if (!offline.empty()) {
-        render_device_detail(out, cfg, offline[0], &session);
+        const auto supported = m_offline_metrics.supported_ids(offline[0].slot);
+        render_device_detail(out, cfg, offline[0], &session, supported);
         sep();
     }
     render_main_menu(out, cfg);
@@ -530,12 +571,15 @@ int App::run_demo_frames(std::ostream& out, const RenderConfig& cfg) {
     render_device_list(out, cfg, online, true);
     sep();
     if (online.size() > 1) {
-        render_device_detail(out, cfg, online[1], nullptr);
+        const auto supported = m_online_metrics.supported_ids(online[1].slot);
+        render_device_detail(out, cfg, online[1], nullptr, supported);
         sep();
     }
     if (online.size() > 1 && !online[1].measure.empty()) {
         const auto& md = online[1].measure[0];
-        render_metric_detail(out, cfg, md, is_aspirational(online[1], md));
+        const auto supported = m_online_metrics.supported_ids(online[1].slot);
+        render_metric_detail(out, cfg, md, is_aspirational(online[1], md),
+                             id_in_span(supported, md.id));
         sep();
     }
     out << "Goodbye.\n";
