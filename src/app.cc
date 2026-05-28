@@ -10,7 +10,10 @@
 #include <cstddef>
 #include <istream>
 #include <ostream>
+#include <profcat/descriptor.hpp>
+#include <profcat/enums.hpp>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace avail {
@@ -87,19 +90,21 @@ std::vector<MenuItem> build_device_detail_menu(const Device& device, const Sessi
     for (std::size_t i = 0; i < device.measure.size(); ++i) {
         const auto& m = device.measure[i];
         const bool on = with_session && session.has_metric(device.slot, m.name);
-        std::string label = std::string{with_session ? (on ? "[x] " : "[ ] ") : "    "} + m.name;
-        if (m.unit) {
-            label += " (" + *m.unit + ")";
-        }
+        std::string label = std::string{with_session ? (on ? "[x] " : "[ ] ") : "    "};
+        label.append(m.display_name);
+        label.append(" (");
+        label.append(profcat::to_string(m.unit));
+        label.append(")");
         items.push_back({std::move(label), "m:" + std::to_string(i)});
     }
     for (std::size_t i = 0; i < device.configure.size(); ++i) {
         const auto& m = device.configure[i];
         const bool on = with_session && session.has_configure(device.slot, m.name);
-        std::string label = std::string{with_session ? (on ? "[x] " : "[ ] ") : "    "} + m.name;
-        if (m.unit) {
-            label += " (" + *m.unit + ")";
-        }
+        std::string label = std::string{with_session ? (on ? "[x] " : "[ ] ") : "    "};
+        label.append(m.display_name);
+        label.append(" (");
+        label.append(profcat::to_string(m.unit));
+        label.append(")");
         items.push_back({std::move(label), "c:" + std::to_string(i)});
     }
     if (with_session) {
@@ -226,9 +231,11 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                 const auto& dev = devices[active_device];
                 const auto total_measure = dev.measure.size();
                 if (active_metric < total_measure) {
-                    render_metric_detail(out, cfg, dev.measure[active_metric]);
+                    const auto& md = dev.measure[active_metric];
+                    render_metric_detail(out, cfg, md, is_aspirational(dev, md));
                 } else if (active_metric - total_measure < dev.configure.size()) {
-                    render_metric_detail(out, cfg, dev.configure[active_metric - total_measure]);
+                    const auto& md = dev.configure[active_metric - total_measure];
+                    render_metric_detail(out, cfg, md, is_aspirational(dev, md));
                 }
             }
             out << '\n' << "(Press Enter, Esc, q, or b to go back)\n";
@@ -527,7 +534,8 @@ int App::run_demo_frames(std::ostream& out, const RenderConfig& cfg) {
         sep();
     }
     if (online.size() > 1 && !online[1].measure.empty()) {
-        render_metric_detail(out, cfg, online[1].measure[0]);
+        const auto& md = online[1].measure[0];
+        render_metric_detail(out, cfg, md, is_aspirational(online[1], md));
         sep();
     }
     out << "Goodbye.\n";

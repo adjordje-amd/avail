@@ -5,6 +5,7 @@
 #include "avail/session.h"
 
 #include <ostream>
+#include <profcat/descriptor.hpp>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -40,7 +41,8 @@ void render_device_list(std::ostream& out, const RenderConfig& cfg,
                         const std::vector<Device>& devices, bool show_back);
 void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Device& device,
                           const SessionState* session_or_null);
-void render_metric_detail(std::ostream& out, const RenderConfig& cfg, const Metric& metric);
+void render_metric_detail(std::ostream& out, const RenderConfig& cfg,
+                          const profcat::MetricDescriptor& metric, bool aspirational);
 void render_preset_preview(std::ostream& out, const RenderConfig& cfg, const SessionState& session,
                            const std::vector<Device>& devices);
 void render_confirm(std::ostream& out, const RenderConfig& cfg, std::string_view question);

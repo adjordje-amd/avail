@@ -2,9 +2,13 @@
 #include "avail/render.h"
 #include "avail/session.h"
 
+#include <cstdint>
 #include <gtest/gtest.h>
+#include <profcat/catalog.hpp>
+#include <profcat/descriptor.hpp>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -14,6 +18,15 @@ avail::RenderConfig color_off() {
 
 avail::RenderConfig color_on() {
     return avail::RenderConfig{.color = true};
+}
+
+const profcat::MetricDescriptor& lookup_or_die(std::uint32_t id) {
+    for (const auto& d : profcat::catalog) {
+        if (d.id == id) {
+            return d;
+        }
+    }
+    std::abort();
 }
 
 TEST(render_test, welcome_includes_demo_label) {
@@ -62,50 +75,42 @@ TEST(render_test, strip_ansi_passes_through_plain_text) {
 }
 
 TEST(render_test, aspirational_badge_present_when_metric_is_aspirational) {
-    avail::Metric m;
-    m.name = "Wave Occupancy %";
-    m.group = "Derived metrics";
-    m.purpose = "x";
-    m.enable = "rocprof-sys-run -- ./app";
-    m.aspirational = true;
+    const auto& m = lookup_or_die(0x6001);  // derived valu_util
     std::ostringstream os;
-    avail::render_metric_detail(os, color_off(), m);
+    avail::render_metric_detail(os, color_off(), m, true);
     EXPECT_NE(os.str().find("[demo: proposed UX]"), std::string::npos);
 }
 
 TEST(render_test, non_aspirational_metric_has_no_badge) {
-    avail::Metric m;
-    m.name = "IPC";
-    m.group = "Derived metrics";
-    m.purpose = "x";
-    m.enable = "rocprof-sys-run -- ./app";
-    m.aspirational = false;
+    const auto& m = lookup_or_die(0x6004);  // derived ipc
     std::ostringstream os;
-    avail::render_metric_detail(os, color_off(), m);
+    avail::render_metric_detail(os, color_off(), m, false);
     EXPECT_EQ(os.str().find("[demo: proposed UX]"), std::string::npos);
 }
 
 TEST(render_test, device_detail_shows_checkbox_when_session_provided) {
+    const auto& sq_waves = lookup_or_die(0x2001);
     avail::Device d;
     d.slot = "gpu0";
     d.kind = "GPU";
     d.identity = "test";
     d.supported = true;
-    d.measure = {avail::Metric{"SQ_WAVES", "Hardware counters", "", "", false, {}, {}, {}}};
+    d.measure = {sq_waves};
     avail::SessionState s;
-    s.toggle_metric("gpu0", "SQ_WAVES");
+    s.toggle_metric("gpu0", sq_waves.name);
     std::ostringstream os;
     avail::render_device_detail(os, color_off(), d, &s);
     EXPECT_NE(os.str().find("[x]"), std::string::npos);
 }
 
 TEST(render_test, device_detail_no_checkbox_when_session_null) {
+    const auto& sq_waves = lookup_or_die(0x2001);
     avail::Device d;
     d.slot = "gpu0";
     d.kind = "GPU";
     d.identity = "test";
     d.supported = true;
-    d.measure = {avail::Metric{"SQ_WAVES", "Hardware counters", "", "", false, {}, {}, {}}};
+    d.measure = {sq_waves};
     std::ostringstream os;
     avail::render_device_detail(os, color_off(), d, nullptr);
     EXPECT_EQ(os.str().find("[x]"), std::string::npos);

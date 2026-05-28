@@ -1,8 +1,10 @@
+#include "avail/device.h"
 #include "avail/mocks_offline.h"
 #include "avail/mocks_online.h"
 
 #include <algorithm>
 #include <gtest/gtest.h>
+#include <profcat/descriptor.hpp>
 #include <string>
 
 namespace {
@@ -34,10 +36,12 @@ TEST(mocks_online_test, gpu0_has_mixed_aspirational_and_real_metrics) {
     avail::MockOnlineDeviceCatalog cat;
     const auto devs = cat.devices();
     const auto& gpu0 = devs[1];
-    const bool has_real = std::any_of(gpu0.measure.begin(), gpu0.measure.end(),
-                                      [](const avail::Metric& m) { return !m.aspirational; });
-    const bool has_asp = std::any_of(gpu0.measure.begin(), gpu0.measure.end(),
-                                     [](const avail::Metric& m) { return m.aspirational; });
+    const bool has_real = std::any_of(
+        gpu0.measure.begin(), gpu0.measure.end(),
+        [&](const profcat::MetricDescriptor& m) { return !avail::is_aspirational(gpu0, m); });
+    const bool has_asp = std::any_of(
+        gpu0.measure.begin(), gpu0.measure.end(),
+        [&](const profcat::MetricDescriptor& m) { return avail::is_aspirational(gpu0, m); });
     EXPECT_TRUE(has_real);
     EXPECT_TRUE(has_asp);
 }
@@ -89,10 +93,12 @@ TEST(mocks_offline_test, every_metric_is_aspirational) {
     const auto devs = cat.devices();
     for (const auto& d : devs) {
         for (const auto& m : d.measure) {
-            EXPECT_TRUE(m.aspirational) << "device " << d.slot << " metric " << m.name;
+            EXPECT_TRUE(avail::is_aspirational(d, m))
+                << "device " << d.slot << " metric " << m.name;
         }
         for (const auto& m : d.configure) {
-            EXPECT_TRUE(m.aspirational) << "device " << d.slot << " configure " << m.name;
+            EXPECT_TRUE(avail::is_aspirational(d, m))
+                << "device " << d.slot << " configure " << m.name;
         }
     }
 }

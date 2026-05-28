@@ -1,8 +1,12 @@
 #include "avail/render.h"
 
+#include "avail/device.h"
+
 #include <algorithm>
 #include <cctype>
 #include <ostream>
+#include <profcat/descriptor.hpp>
+#include <profcat/enums.hpp>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -39,13 +43,12 @@ void header(std::ostream& out, const Ansi& ansi, std::string_view title) {
     rule(out, ansi);
 }
 
-void render_metric_line(std::ostream& out, const Ansi& ansi, int index, const Metric& m,
+void render_metric_line(std::ostream& out, const Ansi& ansi, int index,
+                        const profcat::MetricDescriptor& m, bool aspirational,
                         const char* checkbox) {
-    out << "  " << index << ". " << checkbox << ' ' << m.name;
-    if (m.unit) {
-        out << " (" << *m.unit << ')';
-    }
-    if (m.aspirational) {
+    out << "  " << index << ". " << checkbox << ' ' << m.display_name << " ("
+        << profcat::to_string(m.unit) << ')';
+    if (aspirational) {
         out << ansi.yellow << ansi.dim << kBadge << ansi.reset;
     }
     out << '\n';
@@ -134,43 +137,49 @@ void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Devi
     int idx = 1;
     for (const auto& m : device.measure) {
         const char* box = "[ ]";
-        if (session_or_null != nullptr && session_or_null->has_metric(device.slot, m.name)) {
+        if (session_or_null != nullptr &&
+            session_or_null->has_metric(device.slot, std::string{m.name})) {
             box = "[x]";
         }
-        render_metric_line(out, ansi, idx, m, session_or_null ? box : "  ");
+        render_metric_line(out, ansi, idx, m, is_aspirational(device, m),
+                           session_or_null ? box : "  ");
         ++idx;
     }
     out << ansi.bold << "Configure:" << ansi.reset << '\n';
     for (const auto& m : device.configure) {
         const char* box = "[ ]";
-        if (session_or_null != nullptr && session_or_null->has_configure(device.slot, m.name)) {
+        if (session_or_null != nullptr &&
+            session_or_null->has_configure(device.slot, std::string{m.name})) {
             box = "[x]";
         }
-        render_metric_line(out, ansi, idx, m, session_or_null ? box : "  ");
+        render_metric_line(out, ansi, idx, m, is_aspirational(device, m),
+                           session_or_null ? box : "  ");
         ++idx;
     }
     out << '\n';
     out << "  Type a number to toggle. 'b' to go back.\n";
 }
 
-void render_metric_detail(std::ostream& out, const RenderConfig& cfg, const Metric& metric) {
+void render_metric_detail(std::ostream& out, const RenderConfig& cfg,
+                          const profcat::MetricDescriptor& metric, bool aspirational) {
     const auto ansi = make_ansi(cfg);
     std::string title = "Metric: ";
-    title.append(metric.name);
+    title.append(metric.display_name);
     header(out, ansi, title);
-    out << "Group:   " << metric.group << '\n';
-    out << "Purpose: " << metric.purpose << '\n';
-    if (metric.unit) {
-        out << "Unit:    " << *metric.unit << '\n';
+    out << "Id:          " << metric.name << '\n';
+    out << "Description: " << metric.description << '\n';
+    out << "Track:       " << metric.track << '\n';
+    out << "Kind:        " << profcat::to_string(metric.kind) << '\n';
+    out << "Unit:        " << profcat::to_string(metric.unit) << '\n';
+    out << "Source:      " << profcat::to_string(metric.source) << '\n';
+    out << "Stage:       " << profcat::to_string(metric.stage) << '\n';
+    if (metric.needs_root) {
+        out << "Caveat:      requires root (CAP_SYS_ADMIN)\n";
     }
-    if (metric.status) {
-        out << "Status:  " << *metric.status << '\n';
+    if (metric.multiplexed) {
+        out << "Note:        multiplexed counter\n";
     }
-    if (metric.caveat) {
-        out << "Caveat:  " << *metric.caveat << '\n';
-    }
-    out << "Enable:\n  " << metric.enable << '\n';
-    if (metric.aspirational) {
+    if (aspirational) {
         out << ansi.yellow << ansi.dim << kBadge << ansi.reset << '\n';
     }
     out << "  b. Back\n";
@@ -257,14 +266,13 @@ void render_device_detail_header(std::ostream& out, const RenderConfig& cfg, con
     out << ansi.bold << "Measure:" << ansi.reset << '\n';
     for (const auto& m : device.measure) {
         const char* box = "[ ]";
-        if (session_or_null != nullptr && session_or_null->has_metric(device.slot, m.name)) {
+        if (session_or_null != nullptr &&
+            session_or_null->has_metric(device.slot, std::string{m.name})) {
             box = "[x]";
         }
-        out << "  " << (session_or_null ? box : "  ") << ' ' << m.name;
-        if (m.unit) {
-            out << " (" << *m.unit << ')';
-        }
-        if (m.aspirational) {
+        out << "  " << (session_or_null ? box : "  ") << ' ' << m.display_name << " ("
+            << profcat::to_string(m.unit) << ')';
+        if (is_aspirational(device, m)) {
             out << ansi.yellow << ansi.dim << kBadge << ansi.reset;
         }
         out << '\n';
@@ -272,14 +280,13 @@ void render_device_detail_header(std::ostream& out, const RenderConfig& cfg, con
     out << ansi.bold << "Configure:" << ansi.reset << '\n';
     for (const auto& m : device.configure) {
         const char* box = "[ ]";
-        if (session_or_null != nullptr && session_or_null->has_configure(device.slot, m.name)) {
+        if (session_or_null != nullptr &&
+            session_or_null->has_configure(device.slot, std::string{m.name})) {
             box = "[x]";
         }
-        out << "  " << (session_or_null ? box : "  ") << ' ' << m.name;
-        if (m.unit) {
-            out << " (" << *m.unit << ')';
-        }
-        if (m.aspirational) {
+        out << "  " << (session_or_null ? box : "  ") << ' ' << m.display_name << " ("
+            << profcat::to_string(m.unit) << ')';
+        if (is_aspirational(device, m)) {
             out << ansi.yellow << ansi.dim << kBadge << ansi.reset;
         }
         out << '\n';

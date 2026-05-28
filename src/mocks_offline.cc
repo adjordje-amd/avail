@@ -3,6 +3,10 @@
 #include "avail/device.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <profcat/catalog.hpp>
+#include <profcat/descriptor.hpp>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -11,85 +15,108 @@ namespace avail {
 
 namespace {
 
-Metric aspirational(std::string name, std::string group, std::string purpose, std::string enable,
-                    std::optional<std::string> unit = std::nullopt) {
-    Metric m;
-    m.name = std::move(name);
-    m.group = std::move(group);
-    m.purpose = std::move(purpose);
-    m.enable = std::move(enable);
-    m.aspirational = true;
-    m.status = std::string("[demo]");
-    m.unit = std::move(unit);
-    return m;
+constexpr std::uint32_t kCpu_SampleCpuTime = 0x4001;
+constexpr std::uint32_t kCpu_SampleCallStack = 0x4003;
+constexpr std::uint32_t kCpu_PmuCycles = 0x4004;
+constexpr std::uint32_t kCpu_PmuInstructions = 0x4005;
+constexpr std::uint32_t kCpu_DerivedIpc = 0x6004;
+
+constexpr std::uint32_t kGpu_SqWaves = 0x2001;
+constexpr std::uint32_t kGpu_GrbmGuiActive = 0x2006;
+constexpr std::uint32_t kGpu_TccHit = 0x2008;
+constexpr std::uint32_t kGpu_TccMiss = 0x2009;
+constexpr std::uint32_t kGpu_DerivedValuUtil = 0x6001;
+constexpr std::uint32_t kGpu_DerivedL2Hit = 0x6002;
+constexpr std::uint32_t kGpu_DerivedSqUtil = 0x6003;
+
+constexpr std::uint32_t kRocm_KernelDispatch = 0x1101;
+constexpr std::uint32_t kRocm_CopyH2d = 0x1201;
+constexpr std::uint32_t kRocm_CopyD2h = 0x1202;
+
+constexpr std::uint32_t kNic_RxBytes = 0x3010;
+constexpr std::uint32_t kNic_TxBytes = 0x3011;
+
+const profcat::MetricDescriptor* lookup(std::uint32_t id) noexcept {
+    for (const auto& d : profcat::catalog) {
+        if (d.id == id) {
+            return &d;
+        }
+    }
+    return nullptr;
 }
 
-std::vector<Device> build_devices() {
-    std::vector<Device> out;
-    out.reserve(3);
-
-    Device cpu;
-    cpu.slot = "cpu0";
-    cpu.kind = "CPU";
-    cpu.identity = "Generic CPU class (no specific model)";
-    cpu.supported = true;
-    cpu.measure = {
-        aspirational("IPC", "Derived metrics", "Instructions retired per cycle",
-                     "rocprof-sys-run --sample cputime -- ./app", "ratio"),
-        aspirational("Cache miss rate %", "Derived metrics", "Last-level cache miss fraction",
-                     "rocprof-sys-run --sample cputime -- ./app", "%"),
-        aspirational("Branch miss rate %", "Derived metrics", "Branch mispredict fraction",
-                     "rocprof-sys-run --sample cputime -- ./app", "%"),
-    };
-    cpu.configure = {
-        aspirational("Sampling mode", "Sampling", "Wall-clock vs CPU-time trigger",
-                     "rocprof-sys-run --sample cputime -- ./app", "cputime|realtime"),
-    };
-    out.push_back(std::move(cpu));
-
-    Device gpu;
-    gpu.slot = "gpu0";
-    gpu.kind = "GPU";
-    gpu.identity = "Generic GPU class (no specific model)";
-    gpu.supported = true;
-    gpu.measure = {
-        aspirational("Wave Occupancy %", "Derived metrics", "Active waves vs hardware max",
-                     "rocprof-sys-run --metric wave_occupancy -- ./app", "%"),
-        aspirational("L2 Cache Hit %", "Derived metrics", "GPU L2 hit rate",
-                     "rocprof-sys-run --metric l2_hit_rate -- ./app", "%"),
-        aspirational("Compute Throughput", "Derived metrics", "Achieved FP throughput",
-                     "rocprof-sys-run --metric compute_throughput -- ./app", "TFLOP/s"),
-    };
-    gpu.configure = {
-        aspirational("Kernel dispatch trace", "Tracing", "Capture per-kernel dispatch",
-                     "rocprof-sys-run --use-rocm --rocm-domains kernel_dispatch -- ./app", "bool"),
-        aspirational("Memory copy trace", "Tracing", "Capture HIP / HSA memcpy",
-                     "rocprof-sys-run --use-rocm --rocm-domains memory_copy -- ./app", "bool"),
-    };
-    out.push_back(std::move(gpu));
-
-    Device nic;
-    nic.slot = "nic0";
-    nic.kind = "AINIC";
-    nic.identity = "Generic AI NIC class (no specific model)";
-    nic.supported = true;
-    nic.measure = {
-        aspirational("Packet RX rate", "Network counters", "Packets received per second",
-                     "rocprof-sys-run --nic pkt_rx_rate -- ./app", "pkt/s"),
-        aspirational("Packet TX rate", "Network counters", "Packets transmitted per second",
-                     "rocprof-sys-run --nic pkt_tx_rate -- ./app", "pkt/s"),
-    };
-    nic.configure = {
-        aspirational("RDMA trace toggle", "Tracing", "Record RDMA verbs as trace slices",
-                     "rocprof-sys-run --nic-trace rdma -- ./app", "bool"),
-    };
-    out.push_back(std::move(nic));
-
+std::vector<profcat::MetricDescriptor> filter(std::span<const std::uint32_t> ids) {
+    std::vector<profcat::MetricDescriptor> out;
+    out.reserve(ids.size());
+    for (std::uint32_t id : ids) {
+        if (const auto* d = lookup(id)) {
+            out.push_back(*d);
+        }
+    }
     return out;
 }
 
+Device build_cpu0() {
+    static constexpr std::uint32_t measure_ids[] = {
+        kCpu_DerivedIpc,    kCpu_PmuCycles,       kCpu_PmuInstructions,
+        kCpu_SampleCpuTime, kCpu_SampleCallStack,
+    };
+    Device d;
+    d.slot = "cpu0";
+    d.kind = "CPU";
+    d.identity = "Generic CPU class (no specific model)";
+    d.supported = true;
+    d.measure = filter(measure_ids);
+    d.aspirational_metric_ids.assign(std::begin(measure_ids), std::end(measure_ids));
+    return d;
+}
+
+Device build_gpu0() {
+    static constexpr std::uint32_t measure_ids[] = {
+        kGpu_SqWaves,         kGpu_GrbmGuiActive, kGpu_TccHit,        kGpu_TccMiss,
+        kGpu_DerivedValuUtil, kGpu_DerivedL2Hit,  kGpu_DerivedSqUtil,
+    };
+    static constexpr std::uint32_t configure_ids[] = {
+        kRocm_KernelDispatch,
+        kRocm_CopyH2d,
+        kRocm_CopyD2h,
+    };
+    Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "Generic GPU class (no specific model)";
+    d.supported = true;
+    d.measure = filter(measure_ids);
+    d.configure = filter(configure_ids);
+    d.aspirational_metric_ids.reserve(std::size(measure_ids) + std::size(configure_ids));
+    d.aspirational_metric_ids.insert(d.aspirational_metric_ids.end(), std::begin(measure_ids),
+                                     std::end(measure_ids));
+    d.aspirational_metric_ids.insert(d.aspirational_metric_ids.end(), std::begin(configure_ids),
+                                     std::end(configure_ids));
+    return d;
+}
+
+Device build_nic0() {
+    static constexpr std::uint32_t measure_ids[] = {kNic_RxBytes, kNic_TxBytes};
+    Device d;
+    d.slot = "nic0";
+    d.kind = "AINIC";
+    d.identity = "Generic AI NIC class (no specific model)";
+    d.supported = true;
+    d.measure = filter(measure_ids);
+    d.aspirational_metric_ids.assign(std::begin(measure_ids), std::end(measure_ids));
+    return d;
+}
+
 const std::vector<Device>& cached_devices() {
-    static const std::vector<Device> kDevices = build_devices();
+    static const std::vector<Device> kDevices = [] {
+        std::vector<Device> v;
+        v.reserve(3);
+        v.push_back(build_cpu0());
+        v.push_back(build_gpu0());
+        v.push_back(build_nic0());
+        return v;
+    }();
     return kDevices;
 }
 
@@ -110,14 +137,25 @@ std::vector<Device> MockOfflineDeviceCatalog::devices() const {
     return cached_devices();
 }
 
-std::vector<Metric> MockOfflineMetricCatalog::measure_metrics(std::string_view slot) const {
+std::span<const profcat::MetricDescriptor>
+MockOfflineMetricCatalog::measure_metrics(std::string_view slot) const {
     const Device* d = find_slot(slot);
-    return d ? d->measure : std::vector<Metric>{};
+    return d ? std::span<const profcat::MetricDescriptor>{d->measure}
+             : std::span<const profcat::MetricDescriptor>{};
 }
 
-std::vector<Metric> MockOfflineMetricCatalog::configure_metrics(std::string_view slot) const {
+std::span<const profcat::MetricDescriptor>
+MockOfflineMetricCatalog::configure_metrics(std::string_view slot) const {
     const Device* d = find_slot(slot);
-    return d ? d->configure : std::vector<Metric>{};
+    return d ? std::span<const profcat::MetricDescriptor>{d->configure}
+             : std::span<const profcat::MetricDescriptor>{};
+}
+
+std::span<const std::uint32_t>
+MockOfflineMetricCatalog::aspirational_ids(std::string_view slot) const {
+    const Device* d = find_slot(slot);
+    return d ? std::span<const std::uint32_t>{d->aspirational_metric_ids}
+             : std::span<const std::uint32_t>{};
 }
 
 }  // namespace avail

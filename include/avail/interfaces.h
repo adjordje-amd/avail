@@ -2,6 +2,9 @@
 
 #include "avail/device.h"
 
+#include <cstdint>
+#include <profcat/descriptor.hpp>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -33,10 +36,17 @@ class IMetricCatalog {
   public:
     virtual ~IMetricCatalog() = default;
 
-    [[nodiscard]] virtual std::vector<Metric>
+    [[nodiscard]] virtual std::span<const profcat::MetricDescriptor>
     measure_metrics(std::string_view device_slot) const = 0;
-    [[nodiscard]] virtual std::vector<Metric>
+    [[nodiscard]] virtual std::span<const profcat::MetricDescriptor>
     configure_metrics(std::string_view device_slot) const = 0;
+
+    /**
+     * Subset of metric ids for @p device_slot that are aspirational
+     * (declared in profcat, but not yet implemented for this device).
+     */
+    [[nodiscard]] virtual std::span<const std::uint32_t>
+    aspirational_ids(std::string_view device_slot) const = 0;
 };
 
 /**
