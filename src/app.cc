@@ -48,9 +48,9 @@ constexpr const char* kIdOffline = "offline";
 
 std::vector<MenuItem> build_main_menu() {
     return {
-        {"Create profiling configuration", kIdCreate},
-        {"Inspect what is available", kIdInspect},
-        {"Exit", kIdExit},
+        {"Create profiling configuration", kIdCreate, "Configure and launch a profiling run"},
+        {"Inspect what is available", kIdInspect, "Discover CPUs, GPUs, NICs on this system"},
+        {"Exit", kIdExit, ""},
     };
 }
 
@@ -351,11 +351,18 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
 
         const bool is_device_list_screen =
             current == Screen::CreateDeviceList || current == Screen::InspectDeviceList;
+        const bool is_main_menu_screen = current == Screen::MainMenu;
 
         while (!committed && !exit_now && !back_now) {
             render_header(devices);
             if (is_device_list_screen) {
                 render_device_list_screen(out, cfg, devices, menu.selected_index());
+            } else if (is_main_menu_screen) {
+                render_main_menu_items(out, cfg, menu.items(), menu.selected_index());
+                out << '\n';
+                render_footer_hints(out, cfg,
+                                    "\xe2\x86\x91/\xe2\x86\x93 move   "
+                                    "Enter select   q quit");
             } else {
                 menu.render(out, cfg);
             }

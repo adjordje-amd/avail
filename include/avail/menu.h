@@ -14,10 +14,21 @@ namespace avail {
  *
  * @c label is the user-visible text. @c id is a stable, opaque token the
  * dispatcher uses to identify the chosen action; it never appears on screen.
+ * @c description is an optional one-line caption rendered next to the label
+ * by chrome-style menu renderers (e.g. the main menu's 2-column layout);
+ * default-empty so menus that do not need it are unaffected.
  */
 struct MenuItem {
     std::string label;
     std::string id;
+    std::string description = {};
+
+    MenuItem() = default;
+    MenuItem(std::string label_in, std::string id_in)
+        : label(std::move(label_in)), id(std::move(id_in)) {}
+    MenuItem(std::string label_in, std::string id_in, std::string description_in)
+        : label(std::move(label_in)), id(std::move(id_in)), description(std::move(description_in)) {
+    }
 };
 
 /**

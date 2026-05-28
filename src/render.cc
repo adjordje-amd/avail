@@ -1,6 +1,7 @@
 #include "avail/render.h"
 
 #include "avail/device.h"
+#include "avail/menu.h"
 
 #include <algorithm>
 #include <array>
@@ -50,7 +51,29 @@ constexpr std::string_view kFooterHintsDevices = "\xe2\x86\x91/\xe2\x86\x93 move
                                                  "Enter select   q back";
 constexpr std::string_view kFooterHintsDetail = "\xe2\x86\x91/\xe2\x86\x93 move   "
                                                 "Enter toggle   q back";
+constexpr std::string_view kFooterHintsMainMenu = "\xe2\x86\x91/\xe2\x86\x93 move   "
+                                                  "Enter select   q quit";
 // U+2191 UPWARDS ARROW + U+2193 DOWNWARDS ARROW for hints.
+
+// Hardcoded product banner (ROCM-SYSTEMS / AVAIL ASCII art).
+// 79 columns wide; rule width falls back to 81 (banner + 2 padding) off-TTY.
+constexpr std::array<std::string_view, 9> kBannerLines = {
+    "   ___  ____  _______  ___  ______  __________________  _______",
+    "  / _ \\/ __ \\/ ___/  |/  / / __/\\ \\/ / __/_  __/ __/  |/  / __/",
+    " / , _/ /_/ / /__/ /|_/ / _\\ \\   \\  /\\ \\  / / / _// /|_/ /\\ \\",
+    "/_/|_|\\____/\\___/_/  /_/ /___/   /_/___/ /_/ /___/_/  /_/___/",
+    "",
+    "             ___ _   _____   ______",
+    "            / _ | | / / _ | /  _/ /",
+    "           / __ | |/ / __ |_/ // /__",
+    "          /_/ |_|___/_/ |_/___/____/",
+};
+
+constexpr std::string_view kBuildInfo =
+    "rocm-sys-avail v1.6.0   (tag: v1.6.0, x86_64-linux-gnu, gcc 13.3.0, rocm 7.2.x)";
+
+constexpr int kMainMenuRuleFallback = 81;
+constexpr std::string_view kMainMenuItemGutter = "      ";  // 6 spaces between label and desc
 
 int resolve_rule_width(const RenderConfig& cfg) noexcept {
     if (cfg.rule_width > 0) {
@@ -62,6 +85,18 @@ int resolve_rule_width(const RenderConfig& cfg) noexcept {
         return ws.ws_col;
     }
     return kDefaultRuleCols;
+}
+
+int resolve_main_menu_rule_width(const RenderConfig& cfg) noexcept {
+    if (cfg.rule_width > 0) {
+        return cfg.rule_width;
+    }
+    winsize ws{};
+    if (::isatty(STDOUT_FILENO) != 0 && ::ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 &&
+        ws.ws_col > 0) {
+        return ws.ws_col;
+    }
+    return kMainMenuRuleFallback;
 }
 
 std::string repeat_glyph(std::string_view glyph, int count) {
@@ -76,6 +111,11 @@ std::string repeat_glyph(std::string_view glyph, int count) {
 void hr(std::ostream& out, const Ansi& ansi, const RenderConfig& cfg) {
     const int cols = resolve_rule_width(cfg);
     out << "  " << ansi.dim << repeat_glyph(kRuleGlyph, cols) << ansi.reset << '\n';
+}
+
+void main_menu_rule(std::ostream& out, const Ansi& ansi, const RenderConfig& cfg) {
+    const int cols = resolve_main_menu_rule_width(cfg);
+    out << ansi.dim << repeat_glyph(kRuleGlyph, cols) << ansi.reset << '\n';
 }
 
 void chrome_title(std::ostream& out, const Ansi& ansi, std::string_view title) {
@@ -224,16 +264,62 @@ void render_welcome(std::ostream& out, const RenderConfig& cfg) {
     out << "Press Enter to continue (or type 'quit').\n";
 }
 
+namespace {
+
+std::vector<MenuItem> build_main_menu_items_local() {
+    return {
+        {"Create profiling configuration", "create", "Configure and launch a profiling run"},
+        {"Inspect what is available", "inspect", "Discover CPUs, GPUs, NICs on this system"},
+        {"Exit", "exit", ""},
+    };
+}
+
+}  // namespace
+
+void render_banner(std::ostream& out, const RenderConfig& cfg) {
+    const auto ansi = make_ansi(cfg);
+    for (const auto line : kBannerLines) {
+        out << ansi.cyan << line << ansi.reset << '\n';
+    }
+    out << '\n';
+    out << ansi.dim << kBuildInfo << ansi.reset << '\n';
+}
+
+void render_main_menu_items(std::ostream& out, const RenderConfig& cfg,
+                            const std::vector<MenuItem>& items, std::size_t selected_index) {
+    const auto ansi = make_ansi(cfg);
+    std::size_t label_width = 0;
+    for (const auto& item : items) {
+        label_width = std::max(label_width, item.label.size());
+    }
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const auto& item = items[i];
+        const std::string_view cursor = (i == selected_index) ? "> " : "  ";
+        out << cursor << item.label;
+        if (!item.description.empty()) {
+            if (label_width > item.label.size()) {
+                out << std::string(label_width - item.label.size(), ' ');
+            }
+            out << kMainMenuItemGutter << ansi.dim << item.description << ansi.reset;
+        }
+        out << '\n';
+    }
+}
+
 void render_main_menu(std::ostream& out, const RenderConfig& cfg) {
     const auto ansi = make_ansi(cfg);
-    chrome_title(out, ansi, "Main menu");
-    hr(out, ansi, cfg);
+    main_menu_rule(out, ansi, cfg);
+    render_banner(out, cfg);
+    main_menu_rule(out, ansi, cfg);
     out << '\n';
-    out << "  1. Create profiling configuration\n";
-    out << "  2. Inspect what is available\n";
-    out << "  3. Exit\n";
+    out << ansi.bold << "Main Menu" << ansi.reset << '\n';
     out << '\n';
-    render_footer_hints(out, cfg, kFooterHintsDevices);
+    const auto items = build_main_menu_items_local();
+    render_main_menu_items(out, cfg, items, 0);
+    out << '\n';
+    main_menu_rule(out, ansi, cfg);
+    out << ansi.dim << kFooterHintsMainMenu << ansi.reset << '\n';
+    main_menu_rule(out, ansi, cfg);
 }
 
 void render_mode_select(std::ostream& out, const RenderConfig& cfg) {
@@ -518,8 +604,11 @@ void render_welcome_header(std::ostream& out, const RenderConfig& cfg) {
 
 void render_main_menu_header(std::ostream& out, const RenderConfig& cfg) {
     const auto ansi = make_ansi(cfg);
-    chrome_title(out, ansi, "Main menu");
-    hr(out, ansi, cfg);
+    main_menu_rule(out, ansi, cfg);
+    render_banner(out, cfg);
+    main_menu_rule(out, ansi, cfg);
+    out << '\n';
+    out << ansi.bold << "Main Menu" << ansi.reset << '\n';
     out << '\n';
 }
 

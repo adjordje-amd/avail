@@ -1,4 +1,5 @@
 #include "avail/device.h"
+#include "avail/menu.h"
 #include "avail/render.h"
 #include "avail/session.h"
 
@@ -43,6 +44,63 @@ TEST(render_test, main_menu_includes_all_three_options) {
     EXPECT_NE(out.find("Create profiling configuration"), std::string::npos);
     EXPECT_NE(out.find("Inspect what is available"), std::string::npos);
     EXPECT_NE(out.find("Exit"), std::string::npos);
+}
+
+TEST(render_test, main_menu_renders_banner_and_build_info) {
+    std::ostringstream os;
+    avail::render_main_menu(os, color_off());
+    const auto out = os.str();
+    // Banner glyphs (line 1 contains a recognisable run of underscores).
+    EXPECT_NE(out.find("___  ____  _______"), std::string::npos);
+    // AVAIL sub-banner.
+    EXPECT_NE(out.find("|_|___/_/ |_/___/____/"), std::string::npos);
+    EXPECT_NE(out.find("rocm-sys-avail v1.6.0"), std::string::npos);
+    EXPECT_NE(out.find("x86_64-linux-gnu, gcc 13.3.0, rocm 7.2.x"), std::string::npos);
+}
+
+TEST(render_test, main_menu_renders_title_and_footer_hint) {
+    std::ostringstream os;
+    avail::render_main_menu(os, color_off());
+    const auto out = os.str();
+    EXPECT_NE(out.find("Main Menu"), std::string::npos);
+    EXPECT_NE(out.find("Enter select"), std::string::npos);
+    EXPECT_NE(out.find("q quit"), std::string::npos);
+}
+
+TEST(render_test, main_menu_two_column_layout_aligns_descriptions) {
+    std::ostringstream os;
+    avail::render_main_menu(os, color_off());
+    const auto out = os.str();
+    EXPECT_NE(out.find("Configure and launch a profiling run"), std::string::npos);
+    EXPECT_NE(out.find("Discover CPUs, GPUs, NICs on this system"), std::string::npos);
+    // First item cursor "> " prefix on the selected (first) row.
+    EXPECT_NE(out.find("> Create profiling configuration"), std::string::npos);
+    // Second item unselected cursor "  ".
+    EXPECT_NE(out.find("  Inspect what is available"), std::string::npos);
+}
+
+TEST(render_test, main_menu_color_paints_banner_cyan_and_build_dim) {
+    std::ostringstream os;
+    avail::render_main_menu(os, color_on());
+    const auto out = os.str();
+    EXPECT_NE(out.find("\x1b[36m"), std::string::npos);  // cyan banner
+    EXPECT_NE(out.find("\x1b[2m"), std::string::npos);   // dim build-info / rule
+}
+
+TEST(render_test, main_menu_items_helper_renders_2col_with_cursor) {
+    std::vector<avail::MenuItem> items{
+        {"alpha-long-label", "a", "first desc"},
+        {"bravo", "b", "second desc"},
+        {"charlie", "c", ""},
+    };
+    std::ostringstream os;
+    avail::render_main_menu_items(os, color_off(), items, 1);
+    const auto out = os.str();
+    EXPECT_NE(out.find("  alpha-long-label      first desc"), std::string::npos);
+    EXPECT_NE(out.find("> bravo"), std::string::npos);
+    EXPECT_NE(out.find("second desc"), std::string::npos);
+    // Item with empty description has no trailing gutter.
+    EXPECT_NE(out.find("  charlie\n"), std::string::npos);
 }
 
 TEST(render_test, mode_select_lists_online_offline_back) {

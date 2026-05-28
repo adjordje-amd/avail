@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- Main menu: ASCII-art product banner (ROCM-SYSTEMS / AVAIL) + dim
+  build-info line + dim U+2500 rules above and below content.
+- Main menu: 2-column item layout (left-aligned label padded to widest
+  item, then dim description). Existing IA preserved (Create profiling
+  configuration, Inspect what is available, Exit); each gains a one-line
+  description.
+- `MenuItem` gains an optional `description` field (default-empty);
+  unrelated menus keep their existing 2-argument construction.
+
 ## [0.1.0] - 2026-05-28
 
 ### Added
