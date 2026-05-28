@@ -1,0 +1,18 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^third_party/
+      - id: end-of-file-fixer
+        exclude: ^third_party/
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=2000']
+
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v18.1.8
+    hooks:
+      - id: clang-format
+        files: \.(h|hpp|cc|cpp)$
+        exclude: ^third_party/
