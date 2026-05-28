@@ -60,7 +60,7 @@ constexpr std::string_view kFooterHintsDetail = "\xe2\x86\x91/\xe2\x86\x93 move 
 constexpr std::string_view kFooterHintsDetailReadOnly = "\xe2\x86\x91/\xe2\x86\x93 move   "
                                                         "\xe2\x86\x90/\xe2\x86\x92 page   "
                                                         "i info   q back";
-constexpr std::string_view kFooterHintsMetricDetail = "q back";
+constexpr std::string_view kFooterHintsMetricDetail = "i / q  back";
 constexpr std::string_view kFooterHintsPresetPreview = "\xe2\x86\x91/\xe2\x86\x93 move   "
                                                        "Enter select   q back";
 constexpr std::string_view kFooterHintsConfirm = "y yes   n no   q back";

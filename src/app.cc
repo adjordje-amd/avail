@@ -21,6 +21,16 @@
 
 namespace avail {
 
+bool is_metric_detail_back_key(const KeyEvent& ev) noexcept {
+    if (ev.key == Key::Enter || ev.key == Key::Esc) {
+        return true;
+    }
+    if (ev.key != Key::Char) {
+        return false;
+    }
+    return ev.ch == 'q' || ev.ch == 'Q' || ev.ch == 'b' || ev.ch == 'i' || ev.ch == 'I';
+}
+
 namespace {
 
 constexpr const char* kSeparator = "---";
@@ -254,8 +264,7 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             render_header(devices);
             out.flush();
             const auto ev = read_key();
-            if (ev.key == Key::Enter || ev.key == Key::Esc ||
-                (ev.key == Key::Char && (ev.ch == 'q' || ev.ch == 'Q' || ev.ch == 'b'))) {
+            if (is_metric_detail_back_key(ev)) {
                 current = metric_detail_return;
             }
             continue;

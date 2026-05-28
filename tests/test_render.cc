@@ -174,7 +174,7 @@ TEST(render_test, metric_detail_wraps_in_chrome) {
     const auto out = os.str();
     EXPECT_NE(out.find("rocm-sys-avail v1.6.0"), std::string::npos);
     EXPECT_NE(out.find("Metric: "), std::string::npos);
-    EXPECT_NE(out.find("q back"), std::string::npos);
+    EXPECT_NE(out.find("back"), std::string::npos);
 }
 
 TEST(render_test, preset_preview_wraps_in_chrome) {
@@ -879,6 +879,13 @@ TEST(render_test, footer_hints_for_device_detail_read_only_accessor) {
     EXPECT_EQ(hints.find("Enter toggle"), std::string::npos);
     EXPECT_NE(hints.find("i info"), std::string::npos);
     EXPECT_NE(hints.find("q back"), std::string::npos);
+}
+
+TEST(render_test, footer_hints_for_metric_detail_advertises_i_and_q) {
+    const auto hints = avail::footer_hints_for_metric_detail();
+    EXPECT_NE(hints.find('i'), std::string::npos);
+    EXPECT_NE(hints.find('q'), std::string::npos);
+    EXPECT_NE(hints.find("back"), std::string::npos);
 }
 
 }  // namespace

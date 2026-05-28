@@ -1,5 +1,6 @@
 #pragma once
 
+#include "avail/input.h"
 #include "avail/interfaces.h"
 #include "avail/render.h"
 
@@ -7,6 +8,15 @@
 #include <ostream>
 
 namespace avail {
+
+/**
+ * True if @p ev should dismiss the MetricDetail screen and return the user
+ * to whichever screen launched it. Accepts: Enter, Esc, q/Q, b, i/I.
+ *
+ * 'i' acts as a toggle: it opens MetricDetail from Device Detail, and the
+ * second press here closes it. q/b/Esc keyword routing is unchanged.
+ */
+[[nodiscard]] bool is_metric_detail_back_key(const KeyEvent& ev) noexcept;
 
 /**
  * Top-level REPL driver. Holds non-owning references to provider interfaces.
