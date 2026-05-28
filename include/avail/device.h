@@ -21,6 +21,12 @@ struct Device {
     std::string slot;
     std::string kind;
     std::string identity;
+    /** Short display name for the device-list row (e.g. "AMD Ryzen 9 9950X3D"). */
+    std::string display_name;
+    /** First spec column (e.g. "16C / 32T", "gfx1201", "200 Gb/s"). */
+    std::string spec1;
+    /** Second spec column (e.g. "Zen5", "16 GB"). Empty when unused. */
+    std::string spec2;
     bool supported = true;
     std::optional<std::string> unsupported_reason;
     std::vector<profcat::MetricDescriptor> measure;

@@ -53,9 +53,12 @@ TEST_F(demo_walker_test, contains_both_catalog_labels) {
 }
 
 TEST_F(demo_walker_test, contains_online_device_slots) {
+    // cpu0 / gpu0 are reachable via device-detail screens which prefix the
+    // slot. nic0 is shown only in the device-list row, whose visible label is
+    // the display_name (Pensando), not the internal slot id.
     EXPECT_NE(m_out.find("cpu0"), std::string::npos);
     EXPECT_NE(m_out.find("gpu0"), std::string::npos);
-    EXPECT_NE(m_out.find("nic0"), std::string::npos);
+    EXPECT_NE(m_out.find("Pensando"), std::string::npos);
 }
 
 TEST_F(demo_walker_test, contains_separators) {

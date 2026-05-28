@@ -105,6 +105,9 @@ Device build_cpu0() {
     d.slot = "cpu0";
     d.kind = "CPU";
     d.identity = "AMD Ryzen 9 9950X3D (16C / 32T, Zen5)";
+    d.display_name = "AMD Ryzen 9 9950X3D";
+    d.spec1 = "16C / 32T";
+    d.spec2 = "Zen5";
     d.supported = true;
     d.measure = filter(measure_ids);
     d.configure = filter(configure_ids);
@@ -131,6 +134,9 @@ Device build_gpu0() {
     d.slot = "gpu0";
     d.kind = "GPU";
     d.identity = "Radeon RX 9070 XT, gfx1201 (RDNA4, 16 GB)";
+    d.display_name = "Radeon RX 9070 XT";
+    d.spec1 = "gfx1201";
+    d.spec2 = "16 GB";
     d.supported = true;
     d.measure = filter(measure_ids);
     d.configure = filter(configure_ids);
@@ -143,6 +149,9 @@ Device build_gpu1() {
     d.slot = "gpu1";
     d.kind = "GPU";
     d.identity = "Integrated display, gfx1036";
+    d.display_name = "Integrated display";
+    d.spec1 = "gfx1036";
+    d.spec2 = "unsupported";
     d.supported = false;
     d.unsupported_reason =
         "gfx1036 is an integrated/display GPU. No profiling counters exposed by current ROCm.";
@@ -156,6 +165,8 @@ Device build_nic0() {
     d.slot = "nic0";
     d.kind = "NIC";
     d.identity = "AMD Pensando DSC 200G";
+    d.display_name = "AMD Pensando DSC 200G";
+    d.spec1 = "200 Gb/s";
     d.supported = true;
     d.measure = filter(measure_ids);
     d.aspirational_metric_ids.assign(std::begin(aspirational), std::end(aspirational));

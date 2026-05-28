@@ -67,6 +67,9 @@ Device build_cpu0() {
     d.slot = "cpu0";
     d.kind = "CPU";
     d.identity = "Generic CPU class (no specific model)";
+    d.display_name = "Generic CPU class";
+    d.spec1 = "generic";
+    d.spec2 = "aspirational";
     d.supported = true;
     d.measure = filter(measure_ids);
     d.aspirational_metric_ids.assign(std::begin(measure_ids), std::end(measure_ids));
@@ -87,6 +90,9 @@ Device build_gpu0() {
     d.slot = "gpu0";
     d.kind = "GPU";
     d.identity = "Generic GPU class (no specific model)";
+    d.display_name = "Generic GPU class";
+    d.spec1 = "generic";
+    d.spec2 = "aspirational";
     d.supported = true;
     d.measure = filter(measure_ids);
     d.configure = filter(configure_ids);
@@ -104,6 +110,9 @@ Device build_nic0() {
     d.slot = "nic0";
     d.kind = "AINIC";
     d.identity = "Generic AI NIC class (no specific model)";
+    d.display_name = "Generic AI NIC class";
+    d.spec1 = "generic";
+    d.spec2 = "aspirational";
     d.supported = true;
     d.measure = filter(measure_ids);
     d.aspirational_metric_ids.assign(std::begin(measure_ids), std::end(measure_ids));

@@ -199,6 +199,111 @@ TEST(render_test, stage_sorted_indices_groups_by_stage) {
     EXPECT_EQ(ms[idx[1]].id, 0x2001U);  // Gpu second
 }
 
+// --- Section-grouped device-list layout (post-2026-05-28 chrome) ---
+
+namespace {
+
+avail::Device make_dev(std::string slot, std::string kind, std::string display, std::string s1,
+                       std::string s2, bool supported) {
+    avail::Device d;
+    d.slot = std::move(slot);
+    d.kind = std::move(kind);
+    d.identity = "id";
+    d.display_name = std::move(display);
+    d.spec1 = std::move(s1);
+    d.spec2 = std::move(s2);
+    d.supported = supported;
+    return d;
+}
+
+std::vector<avail::Device> make_three_kinds() {
+    return {
+        make_dev("cpu0", "CPU", "AMD Ryzen", "16C / 32T", "Zen5", true),
+        make_dev("gpu0", "GPU", "Radeon RX", "gfx1201", "16 GB", true),
+        make_dev("gpu1", "GPU", "Integrated", "gfx1036", "unsupported", false),
+        make_dev("nic0", "NIC", "Pensando", "200 Gb/s", "", true),
+    };
+}
+
+}  // namespace
+
+TEST(render_test, device_list_groups_by_kind_in_stable_order) {
+    const auto devs = make_three_kinds();
+    std::ostringstream os;
+    avail::render_device_list(os, color_off(), devs, 0, true);
+    const auto out = os.str();
+    const auto cpu = out.find("CPU\n");
+    const auto gpu = out.find("GPU\n");
+    const auto nic = out.find("NIC\n");
+    ASSERT_NE(cpu, std::string::npos);
+    ASSERT_NE(gpu, std::string::npos);
+    ASSERT_NE(nic, std::string::npos);
+    EXPECT_LT(cpu, gpu);
+    EXPECT_LT(gpu, nic);
+}
+
+TEST(render_test, device_list_renders_status_glyphs) {
+    const auto devs = make_three_kinds();
+    std::ostringstream os;
+    avail::render_device_list(os, color_off(), devs, 0, true);
+    const auto out = os.str();
+    EXPECT_NE(out.find("\xe2\x97\x8f"), std::string::npos);  // U+25CF supported
+    EXPECT_NE(out.find("\xe2\x9a\xa0"), std::string::npos);  // U+26A0 unsupported
+}
+
+TEST(render_test, device_list_cursor_marks_selected_row) {
+    const auto devs = make_three_kinds();
+    std::ostringstream os;
+    avail::render_device_list(os, color_off(), devs, 1, true);
+    const auto out = os.str();
+    EXPECT_NE(out.find("> "), std::string::npos);
+}
+
+TEST(render_test, device_list_no_color_keeps_unicode_glyphs) {
+    const auto devs = make_three_kinds();
+    std::ostringstream os;
+    avail::render_device_list(os, color_off(), devs, 0, true);
+    const auto out = os.str();
+    EXPECT_EQ(out.find('\x1b'), std::string::npos);
+    EXPECT_NE(out.find("\xe2\x94\x80"), std::string::npos);  // U+2500 rule
+    EXPECT_NE(out.find("\xe2\x97\x8f"), std::string::npos);
+    EXPECT_NE(out.find("\xe2\x86\x91"), std::string::npos);  // U+2191 up arrow
+}
+
+TEST(render_test, device_list_color_emits_escape_sequences_and_glyphs) {
+    const auto devs = make_three_kinds();
+    std::ostringstream os;
+    avail::render_device_list(os, color_on(), devs, 0, true);
+    const auto out = os.str();
+    EXPECT_NE(out.find('\x1b'), std::string::npos);
+    EXPECT_NE(out.find("\xe2\x97\x8f"), std::string::npos);
+    EXPECT_NE(out.find("\xe2\x94\x80"), std::string::npos);
+}
+
+TEST(render_test, device_list_footer_hints_include_q_back) {
+    const auto devs = make_three_kinds();
+    std::ostringstream os;
+    avail::render_device_list(os, color_off(), devs, 0, true);
+    EXPECT_NE(os.str().find("q back"), std::string::npos);
+}
+
+TEST(render_test, device_list_omits_footer_when_disabled) {
+    const auto devs = make_three_kinds();
+    std::ostringstream os;
+    avail::render_device_list(os, color_off(), devs, 0, false);
+    EXPECT_EQ(os.str().find("q back"), std::string::npos);
+}
+
+TEST(render_test, kind_sorted_device_indices_buckets_cpu_gpu_nic) {
+    const auto devs = make_three_kinds();
+    const auto order = avail::kind_sorted_device_indices(devs);
+    ASSERT_EQ(order.size(), 4U);
+    EXPECT_EQ(devs[order[0]].kind, "CPU");
+    EXPECT_EQ(devs[order[1]].kind, "GPU");
+    EXPECT_EQ(devs[order[2]].kind, "GPU");
+    EXPECT_EQ(devs[order[3]].kind, "NIC");
+}
+
 TEST(render_test, preset_preview_empty_shows_hint) {
     avail::SessionState s;
     std::vector<avail::Device> devs;

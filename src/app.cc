@@ -74,17 +74,20 @@ std::vector<MenuItem> build_create_session_menu(const SessionState& session) {
     return items;
 }
 
+/**
+ * Build the device-list menu in the bucket-sorted (kind_sorted_device_indices)
+ * order. The label is just the slot since render_device_list_screen draws the
+ * full visible row chrome; the label exists only so MenuController can fall
+ * back to its own renderer if called.
+ */
 std::vector<MenuItem> build_device_list_menu(const std::vector<Device>& devices) {
     std::vector<MenuItem> items;
-    items.reserve(devices.size() + 1);
-    for (const auto& d : devices) {
-        std::string label = d.slot + "  " + d.kind + "  " + d.identity;
-        if (!d.supported) {
-            label += "  [unsupported]";
-        }
-        items.push_back({std::move(label), d.slot});
+    items.reserve(devices.size());
+    const auto order = kind_sorted_device_indices(devices);
+    for (std::size_t pos : order) {
+        const auto& d = devices[pos];
+        items.push_back({d.slot, d.slot});
     }
-    items.push_back({"Back", kIdBack});
     return items;
 }
 
@@ -226,7 +229,8 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             break;
         case Screen::CreateDeviceList:
         case Screen::InspectDeviceList:
-            render_device_list_header(out, cfg);
+            // Body drawn by render_device_list_screen in the per-iteration
+            // render block below so the cursor can move with the MenuController.
             break;
         case Screen::CreateDeviceDetail:
             if (active_device < devices.size()) {
@@ -343,10 +347,18 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
         MenuController menu(std::move(items));
         bool committed = false;
         bool exit_now = false;
+        bool back_now = false;
 
-        while (!committed && !exit_now) {
+        const bool is_device_list_screen =
+            current == Screen::CreateDeviceList || current == Screen::InspectDeviceList;
+
+        while (!committed && !exit_now && !back_now) {
             render_header(devices);
-            menu.render(out, cfg);
+            if (is_device_list_screen) {
+                render_device_list_screen(out, cfg, devices, menu.selected_index());
+            } else {
+                menu.render(out, cfg);
+            }
             out.flush();
 
             const auto ev = read_key();
@@ -366,7 +378,9 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                 ev.key == Key::Esc || (ev.key == Key::Char && (ev.ch == 'q' || ev.ch == 'Q'));
             const bool back_char = ev.key == Key::Char && ev.ch == 'b';
             if (esc_or_q || back_char) {
-                if (menu_has_id(menu, kIdBack)) {
+                if (is_device_list_screen) {
+                    back_now = true;
+                } else if (menu_has_id(menu, kIdBack)) {
                     select_by_id(menu, kIdBack);
                     committed = true;
                 } else if (esc_or_q) {
@@ -392,6 +406,13 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
 
         if (exit_now) {
             current = Screen::Exit;
+            continue;
+        }
+        if (back_now) {
+            // Footer-driven back affordance for device-list screens; the
+            // MenuController has no Back item there.
+            current =
+                (current == Screen::CreateDeviceList) ? Screen::CreateSession : Screen::MainMenu;
             continue;
         }
 
@@ -543,7 +564,7 @@ int App::run_demo_frames(std::ostream& out, const RenderConfig& cfg) {
     sep();
     render_create_session(out, cfg, CatalogMode::Online, m_online.label(), session);
     sep();
-    render_device_list(out, cfg, online, true);
+    render_device_list(out, cfg, online, /*selected_index=*/0, /*show_footer_hints=*/true);
     sep();
     if (!online.empty()) {
         const auto supported = m_online_metrics.supported_ids(online[0].slot);
@@ -559,7 +580,7 @@ int App::run_demo_frames(std::ostream& out, const RenderConfig& cfg) {
     session.clear_all();
     render_create_session(out, cfg, CatalogMode::Offline, m_offline.label(), session);
     sep();
-    render_device_list(out, cfg, offline, true);
+    render_device_list(out, cfg, offline, /*selected_index=*/0, /*show_footer_hints=*/true);
     sep();
     if (!offline.empty()) {
         const auto supported = m_offline_metrics.supported_ids(offline[0].slot);
@@ -568,7 +589,7 @@ int App::run_demo_frames(std::ostream& out, const RenderConfig& cfg) {
     }
     render_main_menu(out, cfg);
     sep();
-    render_device_list(out, cfg, online, true);
+    render_device_list(out, cfg, online, /*selected_index=*/0, /*show_footer_hints=*/true);
     sep();
     if (online.size() > 1) {
         const auto supported = m_online_metrics.supported_ids(online[1].slot);
