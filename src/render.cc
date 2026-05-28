@@ -56,7 +56,7 @@ constexpr std::string_view kFooterHintsDevices = "\xe2\x86\x91/\xe2\x86\x93 move
                                                  "Enter select   q back";
 constexpr std::string_view kFooterHintsDetail = "\xe2\x86\x91/\xe2\x86\x93 move   "
                                                 "\xe2\x86\x90/\xe2\x86\x92 page   "
-                                                "Enter toggle   q back";
+                                                "Enter toggle   i info   q back";
 constexpr std::string_view kFooterHintsMetricDetail = "q back";
 constexpr std::string_view kFooterHintsPresetPreview = "\xe2\x86\x91/\xe2\x86\x93 move   "
                                                        "Enter select   q back";
@@ -188,13 +188,14 @@ std::string badges_for(const Ansi& ansi, bool supported, bool enabled, bool aspi
     return s;
 }
 
-// Format one metric line in a device-detail list. Returns the line WITHOUT
-// the trailing newline so the caller can decide between '\n' (legacy demo)
-// and any additional decoration.
+// Format one metric line in a device-detail list. The cursor column is
+// "> " when @p selected is true, "  " otherwise, mirroring the menu-item
+// shape used elsewhere.
 void render_metric_row(std::ostream& out, const Ansi& ansi, int index,
                        const profcat::MetricDescriptor& m, bool aspirational, bool supported,
-                       bool enabled, const char* checkbox) {
-    out << "  " << index << ". " << checkbox << ' ' << m.display_name << " ("
+                       bool enabled, const char* checkbox, bool selected) {
+    const std::string_view cursor = selected ? "> " : "  ";
+    out << cursor << index << ". " << checkbox << ' ' << m.display_name << " ("
         << profcat::to_string(m.unit) << ')' << badges_for(ansi, supported, enabled, aspirational)
         << '\n';
 }
@@ -519,31 +520,25 @@ PageWindow window_for(std::size_t row_count, PaginatedDetail page) noexcept {
     return w;
 }
 
-// Render the visible slice of the combined Measure + Configure list.
-// Group labels ("Measure:" / "Configure:") and stage headings ("[GPU]"
-// etc.) are emitted whenever the visible window includes the first row
-// of that group / stage; this means a stage heading repeats at the top
-// of a continuation page so the reader always sees the active stage.
+// Render the visible slice of the combined Measure + Configure list as a
+// flat list (no Measure / Configure group labels). Stage headings ("[GPU]"
+// etc.) are emitted on the first row of each stage in the visible window,
+// so a stage heading repeats at the top of a continuation page.
+//
+// Checkboxes are rendered on every row in both modes (inspect mode treats
+// the session as a transient tentative-toggle store). Pass @c kNoSelection
+// for @p selected_index to suppress cursor highlight (e.g. legacy demo).
+constexpr std::size_t kNoSelection = static_cast<std::size_t>(-1);
+
 void render_paginated_metric_block(std::ostream& out, const Ansi& ansi,
                                    const std::vector<CombinedRow>& rows, const PageWindow& w,
                                    const Device& device, const SessionState* session,
-                                   std::span<const std::uint32_t> supported_ids) {
-    bool measure_label_done = false;
-    bool configure_label_done = false;
+                                   std::span<const std::uint32_t> supported_ids,
+                                   std::size_t selected_index) {
     bool stage_known = false;
     profcat::Stage current_stage = profcat::Stage::Cpu;
     for (std::size_t i = w.begin; i < w.end; ++i) {
         const auto& row = rows[i];
-        if (!row.is_configure && !measure_label_done) {
-            out << "  " << ansi.bold << "Measure:" << ansi.reset << '\n';
-            measure_label_done = true;
-            stage_known = false;
-        }
-        if (row.is_configure && !configure_label_done) {
-            out << "  " << ansi.bold << "Configure:" << ansi.reset << '\n';
-            configure_label_done = true;
-            stage_known = false;
-        }
         if (!stage_known || row.metric->stage != current_stage) {
             current_stage = row.metric->stage;
             stage_known = true;
@@ -554,14 +549,11 @@ void render_paginated_metric_block(std::ostream& out, const Ansi& ansi,
         const bool aspirational = is_aspirational(device, *row.metric);
         const bool enabled =
             metric_enabled(session, device.slot, row.metric->name, row.is_configure);
-        const char* checkbox = "  ";
-        if (session != nullptr) {
-            checkbox = enabled ? "[x]" : "[ ]";
-        }
+        const char* checkbox = enabled ? "[x]" : "[ ]";
         // Numbering stays stable and global: page 1 rows 1-10, page 2 rows 11-20,
         // etc. Index in the combined list is 0-based; display as 1-based.
         render_metric_row(out, ansi, static_cast<int>(i + 1), *row.metric, aspirational, supported,
-                          enabled, checkbox);
+                          enabled, checkbox, i == selected_index);
     }
 }
 
@@ -614,7 +606,8 @@ void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Devi
     const auto rows = combined_rows(device);
     const auto win = window_for(rows.size(), page);
     render_detail_title_with_page(out, ansi, device, win);
-    render_paginated_metric_block(out, ansi, rows, win, device, session_or_null, supported_ids);
+    render_paginated_metric_block(out, ansi, rows, win, device, session_or_null, supported_ids,
+                                  kNoSelection);
     out << '\n';
     render_chrome_close(out, cfg, kFooterHintsDetail);
 }
@@ -714,55 +707,29 @@ void render_device_list_header(std::ostream& out, const RenderConfig& cfg) {
 
 namespace {
 
-// Header variant of the paginated block: no numbering / no checkbox column
-// because the interactive MenuController draws its own choice list. The
-// rendered rows here are static context, not a selection target.
-void render_paginated_metric_block_header(std::ostream& out, const Ansi& ansi,
-                                          const std::vector<CombinedRow>& rows, const PageWindow& w,
-                                          const Device& device, const SessionState* session,
-                                          std::span<const std::uint32_t> supported_ids) {
-    bool measure_label_done = false;
-    bool configure_label_done = false;
-    bool stage_known = false;
-    profcat::Stage current_stage = profcat::Stage::Cpu;
-    for (std::size_t i = w.begin; i < w.end; ++i) {
-        const auto& row = rows[i];
-        if (!row.is_configure && !measure_label_done) {
-            out << "  " << ansi.bold << "Measure:" << ansi.reset << '\n';
-            measure_label_done = true;
-            stage_known = false;
-        }
-        if (row.is_configure && !configure_label_done) {
-            out << "  " << ansi.bold << "Configure:" << ansi.reset << '\n';
-            configure_label_done = true;
-            stage_known = false;
-        }
-        if (!stage_known || row.metric->stage != current_stage) {
-            current_stage = row.metric->stage;
-            stage_known = true;
-            out << "  " << ansi.dim << "[" << stage_heading(current_stage) << "]" << ansi.reset
-                << '\n';
-        }
-        const bool supported = id_in(supported_ids, row.metric->id);
-        const bool aspirational = is_aspirational(device, *row.metric);
-        const bool enabled =
-            metric_enabled(session, device.slot, row.metric->name, row.is_configure);
-        const char* checkbox = "  ";
-        if (session != nullptr) {
-            checkbox = enabled ? "[x]" : "[ ]";
-        }
-        out << "  " << checkbox << ' ' << row.metric->display_name << " ("
-            << profcat::to_string(row.metric->unit) << ')'
-            << badges_for(ansi, supported, enabled, aspirational) << '\n';
+// Housekeeping row labels rendered below the metric body in interactive
+// Device Detail. Order is Clear (Create-mode only) then Back.
+constexpr std::string_view kClearLabel = "Clear this device's selections";
+constexpr std::string_view kBackLabel = "Back";
+
+void render_housekeeping_block(std::ostream& out, std::size_t metric_count,
+                               std::size_t selected_index, bool show_clear) {
+    std::size_t row = metric_count;
+    if (show_clear) {
+        const std::string_view cursor = (row == selected_index) ? "> " : "  ";
+        out << cursor << kClearLabel << '\n';
+        ++row;
     }
+    const std::string_view back_cursor = (row == selected_index) ? "> " : "  ";
+    out << back_cursor << kBackLabel << '\n';
 }
 
 }  // namespace
 
-void render_device_detail_header(std::ostream& out, const RenderConfig& cfg, const Device& device,
-                                 const SessionState* session_or_null,
-                                 std::span<const std::uint32_t> supported_ids,
-                                 PaginatedDetail page) {
+void render_device_detail_screen(std::ostream& out, const RenderConfig& cfg, const Device& device,
+                                 const SessionState* session,
+                                 std::span<const std::uint32_t> supported_ids, PaginatedDetail page,
+                                 std::size_t selected_index, bool show_clear) {
     const auto ansi = make_ansi(cfg);
     render_chrome_open(out, cfg, "");
 
@@ -770,15 +737,22 @@ void render_device_detail_header(std::ostream& out, const RenderConfig& cfg, con
         render_detail_title_with_page(out, ansi, device, PageWindow{});
         out << "  " << ansi.red << "Unsupported: " << ansi.reset
             << device.unsupported_reason.value_or("no detail") << '\n';
+        out << '\n';
+        render_housekeeping_block(out, /*metric_count=*/0, selected_index, /*show_clear=*/false);
+        out << '\n';
+        render_chrome_close(out, cfg, kFooterHintsDetail);
         return;
     }
 
     const auto rows = combined_rows(device);
     const auto win = window_for(rows.size(), page);
     render_detail_title_with_page(out, ansi, device, win);
-    render_paginated_metric_block_header(out, ansi, rows, win, device, session_or_null,
-                                         supported_ids);
+    render_paginated_metric_block(out, ansi, rows, win, device, session, supported_ids,
+                                  selected_index);
     out << '\n';
+    render_housekeeping_block(out, rows.size(), selected_index, show_clear);
+    out << '\n';
+    render_chrome_close(out, cfg, kFooterHintsDetail);
 }
 
 void render_preset_preview_header(std::ostream& out, const RenderConfig& cfg,

@@ -138,6 +138,24 @@ struct PaginatedDetail {
 void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Device& device,
                           const SessionState* session_or_null,
                           std::span<const std::uint32_t> supported_ids, PaginatedDetail page = {});
+
+/**
+ * Render the full Device Detail screen for interactive mode: chrome open,
+ * paginated metric block (no Measure / Configure labels), fixed housekeeping
+ * block (Clear / Back) below the metric body, chrome close.
+ *
+ * @p selected_index is a flat index into [metrics] ++ [housekeeping]. Rows
+ * with @c i == selected_index are prefixed with @c "> ". When the selected
+ * row falls outside the visible metric page, no metric row carries the
+ * cursor (e.g. housekeeping selection on page 1 of 3).
+ *
+ * @p show_clear toggles the "Clear this device's selections" housekeeping
+ * row. Pass true for Create mode, false for Inspect (no Clear).
+ */
+void render_device_detail_screen(std::ostream& out, const RenderConfig& cfg, const Device& device,
+                                 const SessionState* session,
+                                 std::span<const std::uint32_t> supported_ids, PaginatedDetail page,
+                                 std::size_t selected_index, bool show_clear);
 void render_metric_detail(std::ostream& out, const RenderConfig& cfg,
                           const profcat::MetricDescriptor& metric, bool aspirational,
                           bool supported);
@@ -170,10 +188,6 @@ void render_create_session_header(std::ostream& out, const RenderConfig& cfg, Ca
 void render_device_list_screen(std::ostream& out, const RenderConfig& cfg,
                                const std::vector<Device>& devices, std::size_t selected_index);
 void render_device_list_header(std::ostream& out, const RenderConfig& cfg);
-void render_device_detail_header(std::ostream& out, const RenderConfig& cfg, const Device& device,
-                                 const SessionState* session_or_null,
-                                 std::span<const std::uint32_t> supported_ids,
-                                 PaginatedDetail page = {});
 void render_preset_preview_header(std::ostream& out, const RenderConfig& cfg,
                                   const SessionState& session);
 

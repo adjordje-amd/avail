@@ -270,7 +270,9 @@ TEST(render_test, device_detail_shows_checkbox_when_session_provided) {
     EXPECT_NE(os.str().find("[x]"), std::string::npos);
 }
 
-TEST(render_test, device_detail_no_checkbox_when_session_null) {
+TEST(render_test, device_detail_checkbox_always_present_even_when_session_null) {
+    // Post-polish: checkbox renders on every metric row in BOTH modes.
+    // Null session = everything unchecked.
     const auto& sq_waves = lookup_or_die(0x2001);
     avail::Device d;
     d.slot = "gpu0";
@@ -281,8 +283,103 @@ TEST(render_test, device_detail_no_checkbox_when_session_null) {
     std::uint32_t supported_arr[] = {sq_waves.id};
     std::ostringstream os;
     avail::render_device_detail(os, color_off(), d, nullptr, supported_arr);
+    EXPECT_NE(os.str().find("[ ]"), std::string::npos);
     EXPECT_EQ(os.str().find("[x]"), std::string::npos);
-    EXPECT_EQ(os.str().find("[ ]"), std::string::npos);
+}
+
+TEST(render_test, device_detail_no_measure_or_configure_label) {
+    // Post-polish: the block labels "Measure:" / "Configure:" are removed;
+    // metrics render flat with stage headings only.
+    const auto& sq_waves = lookup_or_die(0x2001);
+    avail::Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "test";
+    d.supported = true;
+    d.measure = {sq_waves};
+    std::uint32_t supported_arr[] = {sq_waves.id};
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported_arr);
+    EXPECT_EQ(os.str().find("Measure:"), std::string::npos);
+    EXPECT_EQ(os.str().find("Configure:"), std::string::npos);
+}
+
+TEST(render_test, device_detail_footer_hints_include_i_info) {
+    const auto& sq_waves = lookup_or_die(0x2001);
+    avail::Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "test";
+    d.supported = true;
+    d.measure = {sq_waves};
+    std::uint32_t supported_arr[] = {sq_waves.id};
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported_arr);
+    EXPECT_NE(os.str().find("i info"), std::string::npos);
+}
+
+TEST(render_test, device_detail_screen_renders_housekeeping_block) {
+    const auto& sq_waves = lookup_or_die(0x2001);
+    avail::Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "test";
+    d.supported = true;
+    d.measure = {sq_waves};
+    std::uint32_t supported_arr[] = {sq_waves.id};
+    avail::SessionState s;
+    std::ostringstream os;
+    avail::render_device_detail_screen(os, color_off(), d, &s, supported_arr,
+                                       avail::PaginatedDetail{}, /*selected_index=*/0,
+                                       /*show_clear=*/true);
+    const auto out = os.str();
+    EXPECT_NE(out.find("Clear this device's selections"), std::string::npos);
+    EXPECT_NE(out.find("Back"), std::string::npos);
+}
+
+TEST(render_test, device_detail_screen_no_clear_when_show_clear_false) {
+    const auto& sq_waves = lookup_or_die(0x2001);
+    avail::Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "test";
+    d.supported = true;
+    d.measure = {sq_waves};
+    std::uint32_t supported_arr[] = {sq_waves.id};
+    avail::SessionState s;
+    std::ostringstream os;
+    avail::render_device_detail_screen(os, color_off(), d, &s, supported_arr,
+                                       avail::PaginatedDetail{}, /*selected_index=*/0,
+                                       /*show_clear=*/false);
+    const auto out = os.str();
+    EXPECT_EQ(out.find("Clear this device's selections"), std::string::npos);
+    EXPECT_NE(out.find("Back"), std::string::npos);
+}
+
+TEST(render_test, device_detail_screen_cursor_on_selected_row_only) {
+    const auto& sq_waves = lookup_or_die(0x2001);
+    const auto& mem_busy = lookup_or_die(0x2002);
+    avail::Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "test";
+    d.supported = true;
+    d.measure = {sq_waves, mem_busy};
+    std::uint32_t supported_arr[] = {sq_waves.id, mem_busy.id};
+    avail::SessionState s;
+    std::ostringstream os;
+    avail::render_device_detail_screen(os, color_off(), d, &s, supported_arr,
+                                       avail::PaginatedDetail{}, /*selected_index=*/1,
+                                       /*show_clear=*/true);
+    const auto out = os.str();
+    // Exactly one "> " cursor in the screen body.
+    std::size_t count = 0;
+    std::size_t pos = 0;
+    while ((pos = out.find("> ", pos)) != std::string::npos) {
+        ++count;
+        pos += 2;
+    }
+    EXPECT_EQ(count, 1u);
 }
 
 TEST(render_test, device_detail_renders_stage_heading) {
