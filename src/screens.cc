@@ -55,7 +55,8 @@ Screen next_screen(Screen current, std::string_view input) {
             return Screen::CreateModeSelect;
         if (input == "2")
             return Screen::InspectDeviceList;
-        if (input == "3" || is_back(input))
+        // q / quit exits from Main Menu (no Back row to go back to).
+        if (is_back(input))
             return Screen::Exit;
         return current;
     }
@@ -64,7 +65,7 @@ Screen next_screen(Screen current, std::string_view input) {
             return Screen::CreateSession;  // online
         if (input == "2")
             return Screen::CreateSession;  // offline (mode tracked elsewhere)
-        if (input == "3" || is_back(input))
+        if (is_back(input))
             return Screen::MainMenu;
         return current;
     }
@@ -73,7 +74,7 @@ Screen next_screen(Screen current, std::string_view input) {
             return Screen::CreateDeviceList;
         if (input == "2")
             return Screen::PresetPreview;
-        if (input == "3" || is_back(input))
+        if (is_back(input))
             return Screen::MainMenu;
         return current;
     }

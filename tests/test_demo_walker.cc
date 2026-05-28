@@ -46,7 +46,9 @@ TEST_F(demo_walker_test, first_frame_is_main_menu) {
 TEST_F(demo_walker_test, contains_main_menu_options) {
     EXPECT_NE(m_out.find("Create profiling configuration"), std::string::npos);
     EXPECT_NE(m_out.find("Inspect what is available"), std::string::npos);
-    EXPECT_NE(m_out.find("Exit"), std::string::npos);
+    // Exit row removed; q/quit keyword in footer covers exit.
+    EXPECT_EQ(m_out.find("  Exit\n"), std::string::npos);
+    EXPECT_EQ(m_out.find("> Exit\n"), std::string::npos);
 }
 
 TEST_F(demo_walker_test, contains_mode_select) {

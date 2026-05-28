@@ -35,13 +35,11 @@ bool id_in_span(std::span<const std::uint32_t> ids, std::uint32_t id) noexcept {
 }
 
 // id tokens used by MenuItem.id; opaque to render code.
-constexpr const char* kIdBack = "back";
 constexpr const char* kIdYes = "yes";
 constexpr const char* kIdNo = "no";
 constexpr const char* kIdClear = "clear";
 constexpr const char* kIdPreview = "preview";
 constexpr const char* kIdDevices = "devices";
-constexpr const char* kIdExit = "exit";
 constexpr const char* kIdCreate = "create";
 constexpr const char* kIdInspect = "inspect";
 constexpr const char* kIdOnline = "online";
@@ -51,7 +49,6 @@ std::vector<MenuItem> build_main_menu() {
     return {
         {"Create profiling configuration", kIdCreate, "Configure and launch a profiling run"},
         {"Inspect what is available", kIdInspect, "Discover CPUs, GPUs, NICs on this system"},
-        {"Exit", kIdExit, ""},
     };
 }
 
@@ -59,7 +56,6 @@ std::vector<MenuItem> build_mode_select_menu() {
     return {
         {"Online", kIdOnline, "This machine, real-ish data"},
         {"Offline", kIdOffline, "Generic device classes, aspirational"},
-        {"Back", kIdBack, ""},
     };
 }
 
@@ -69,7 +65,6 @@ std::vector<MenuItem> build_create_session_menu(const SessionState& session) {
     std::vector<MenuItem> items;
     items.push_back({"Devices...", kIdDevices, "Browse and toggle metrics"});
     items.push_back({"View preset preview", kIdPreview, std::move(preview_desc)});
-    items.push_back({"Back", kIdBack, ""});
     return items;
 }
 
@@ -123,7 +118,6 @@ std::vector<MenuItem> build_device_detail_menu(const Device& device) {
 std::vector<MenuItem> build_preset_preview_menu() {
     return {
         {"Clear preset", kIdClear, "Reset all metric selections"},
-        {"Back", kIdBack, ""},
     };
 }
 
@@ -132,15 +126,6 @@ std::vector<MenuItem> build_confirm_menu() {
         {"No", kIdNo},
         {"Yes", kIdYes},
     };
-}
-
-bool menu_has_id(const MenuController& menu, std::string_view id) noexcept {
-    for (const auto& it : menu.items()) {
-        if (it.id == id) {
-            return true;
-        }
-    }
-    return false;
 }
 
 // Move selection to the first item whose id matches @c id. No-op if absent.
@@ -487,13 +472,12 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                 ev.key == Key::Esc || (ev.key == Key::Char && (ev.ch == 'q' || ev.ch == 'Q'));
             const bool back_char = ev.key == Key::Char && ev.ch == 'b';
             if (esc_or_q || back_char) {
-                if (is_device_list_screen || is_device_detail_screen) {
+                if (current == Screen::MainMenu) {
+                    if (esc_or_q) {
+                        exit_now = true;
+                    }
+                } else {
                     back_now = true;
-                } else if (menu_has_id(menu, kIdBack)) {
-                    select_by_id(menu, kIdBack);
-                    committed = true;
-                } else if (esc_or_q) {
-                    exit_now = true;
                 }
                 continue;
             }
@@ -518,8 +502,8 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             continue;
         }
         if (back_now) {
-            // Footer-driven back affordance for screens without a Back menu
-            // item (device list, device detail).
+            // Footer-driven back affordance. No menu screen carries a Back
+            // row any more; q / b / Esc map to the previous screen here.
             switch (current) {
             case Screen::CreateDeviceList:
                 current = Screen::CreateSession;
@@ -529,6 +513,22 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                 break;
             case Screen::InspectDeviceDetail:
                 current = Screen::InspectDeviceList;
+                break;
+            case Screen::CreateModeSelect:
+                current = Screen::MainMenu;
+                break;
+            case Screen::CreateSession:
+                session.clear_all();
+                current = Screen::MainMenu;
+                break;
+            case Screen::PresetPreview:
+                current = Screen::CreateSession;
+                break;
+            case Screen::ConfirmClearAll:
+                current = Screen::PresetPreview;
+                break;
+            case Screen::ConfirmClearDevice:
+                current = Screen::CreateDeviceDetail;
                 break;
             default:
                 current = Screen::MainMenu;
@@ -544,8 +544,6 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                 current = Screen::CreateModeSelect;
             } else if (id == kIdInspect) {
                 current = Screen::InspectDeviceList;
-            } else if (id == kIdExit) {
-                current = Screen::Exit;
             }
             continue;
         }
@@ -558,8 +556,6 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                 mode = CatalogMode::Offline;
                 session.clear_all();
                 current = Screen::CreateSession;
-            } else if (id == kIdBack) {
-                current = Screen::MainMenu;
             }
             continue;
         }
@@ -570,18 +566,10 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                 if (!session.is_empty()) {
                     current = Screen::PresetPreview;
                 }
-            } else if (id == kIdBack) {
-                session.clear_all();
-                current = Screen::MainMenu;
             }
             continue;
         }
         if (current == Screen::CreateDeviceList || current == Screen::InspectDeviceList) {
-            if (id == kIdBack) {
-                current = (current == Screen::CreateDeviceList) ? Screen::CreateSession
-                                                                : Screen::MainMenu;
-                continue;
-            }
             for (std::size_t i = 0; i < devices.size(); ++i) {
                 if (devices[i].slot == id) {
                     active_device = i;
@@ -625,8 +613,6 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
         if (current == Screen::PresetPreview) {
             if (id == kIdClear) {
                 current = Screen::ConfirmClearAll;
-            } else if (id == kIdBack) {
-                current = Screen::CreateSession;
             }
             continue;
         }

@@ -240,7 +240,6 @@ std::vector<MenuItem> build_main_menu_items_local() {
     return {
         {"Create profiling configuration", "create", "Configure and launch a profiling run"},
         {"Inspect what is available", "inspect", "Discover CPUs, GPUs, NICs on this system"},
-        {"Exit", "exit", ""},
     };
 }
 
@@ -316,7 +315,6 @@ std::vector<MenuItem> build_mode_select_items_local() {
     return {
         {"Online", "online", "This machine, real-ish data"},
         {"Offline", "offline", "Generic device classes, aspirational"},
-        {"Back", "back", ""},
     };
 }
 
@@ -330,14 +328,12 @@ std::vector<MenuItem> build_create_session_items_local(const SessionState& sessi
     return {
         {"Devices...", "devices", "Browse and toggle metrics"},
         {"View preset preview", "preview", std::move(preview_desc)},
-        {"Back", "back", ""},
     };
 }
 
 std::vector<MenuItem> build_preset_preview_items_local() {
     return {
         {"Clear preset", "clear", "Reset all metric selections"},
-        {"Back", "back", ""},
     };
 }
 

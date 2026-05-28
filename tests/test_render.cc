@@ -31,13 +31,15 @@ const profcat::MetricDescriptor& lookup_or_die(std::uint32_t id) {
     std::abort();
 }
 
-TEST(render_test, main_menu_includes_all_three_options) {
+TEST(render_test, main_menu_lists_create_and_inspect) {
     std::ostringstream os;
     avail::render_main_menu(os, color_off());
     const auto out = os.str();
     EXPECT_NE(out.find("Create profiling configuration"), std::string::npos);
     EXPECT_NE(out.find("Inspect what is available"), std::string::npos);
-    EXPECT_NE(out.find("Exit"), std::string::npos);
+    // Exit row removed; q/quit keyword in footer covers exit.
+    EXPECT_EQ(out.find("  Exit\n"), std::string::npos);
+    EXPECT_EQ(out.find("> Exit\n"), std::string::npos);
 }
 
 TEST(render_test, main_menu_renders_banner_and_build_info) {
@@ -97,13 +99,15 @@ TEST(render_test, menu_items_helper_renders_2col_with_cursor) {
     EXPECT_NE(out.find("  charlie\n"), std::string::npos);
 }
 
-TEST(render_test, mode_select_lists_online_offline_back) {
+TEST(render_test, mode_select_lists_online_offline) {
     std::ostringstream os;
     avail::render_mode_select(os, color_off());
     const auto out = os.str();
     EXPECT_NE(out.find("Online"), std::string::npos);
     EXPECT_NE(out.find("Offline"), std::string::npos);
-    EXPECT_NE(out.find("Back"), std::string::npos);
+    // Back row removed; q/b keyword in footer covers back.
+    EXPECT_EQ(out.find("  Back\n"), std::string::npos);
+    EXPECT_EQ(out.find("> Back\n"), std::string::npos);
 }
 
 // --- Uniform chrome wrapper (banner + build-info + title + footer hints) ---
@@ -640,7 +644,9 @@ TEST(render_test, preset_preview_uses_cursor_and_descriptions) {
     const auto out = os.str();
     EXPECT_NE(out.find("> Clear preset"), std::string::npos);
     EXPECT_NE(out.find("Reset all metric selections"), std::string::npos);
-    EXPECT_NE(out.find("  Back"), std::string::npos);
+    // Back row removed; q/b keyword in footer covers back.
+    EXPECT_EQ(out.find("  Back\n"), std::string::npos);
+    EXPECT_EQ(out.find("> Back\n"), std::string::npos);
     EXPECT_EQ(out.find("  1. "), std::string::npos);
     EXPECT_EQ(out.find("  2. "), std::string::npos);
 }
