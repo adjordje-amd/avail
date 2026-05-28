@@ -163,7 +163,7 @@ Device build_nic0() {
     static constexpr std::uint32_t aspirational[] = {kNic_RxBytes, kNic_TxBytes};
     Device d;
     d.slot = "nic0";
-    d.kind = "NIC";
+    d.kind = "AINIC";
     d.identity = "AMD Pensando DSC 200G";
     d.display_name = "AMD Pensando DSC 200G";
     d.spec1 = "200 Gb/s";

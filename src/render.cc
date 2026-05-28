@@ -57,6 +57,9 @@ constexpr std::string_view kFooterHintsDevices = "\xe2\x86\x91/\xe2\x86\x93 move
 constexpr std::string_view kFooterHintsDetail = "\xe2\x86\x91/\xe2\x86\x93 move   "
                                                 "\xe2\x86\x90/\xe2\x86\x92 page   "
                                                 "Enter toggle   i info   q back";
+constexpr std::string_view kFooterHintsDetailReadOnly = "\xe2\x86\x91/\xe2\x86\x93 move   "
+                                                        "\xe2\x86\x90/\xe2\x86\x92 page   "
+                                                        "i info   q back";
 constexpr std::string_view kFooterHintsMetricDetail = "q back";
 constexpr std::string_view kFooterHintsPresetPreview = "\xe2\x86\x91/\xe2\x86\x93 move   "
                                                        "Enter select   q back";
@@ -193,11 +196,14 @@ std::string badges_for(const Ansi& ansi, bool supported, bool enabled, bool aspi
 // shape used elsewhere.
 void render_metric_row(std::ostream& out, const Ansi& ansi, int index,
                        const profcat::MetricDescriptor& m, bool aspirational, bool supported,
-                       bool enabled, const char* checkbox, bool selected) {
+                       bool enabled, const char* checkbox, bool selected, bool show_checkbox) {
     const std::string_view cursor = selected ? "> " : "  ";
-    out << cursor << index << ". " << checkbox << ' ' << m.display_name << " ("
-        << profcat::to_string(m.unit) << ')' << badges_for(ansi, supported, enabled, aspirational)
-        << '\n';
+    out << cursor << index << ". ";
+    if (show_checkbox) {
+        out << checkbox << ' ';
+    }
+    out << m.display_name << " (" << profcat::to_string(m.unit) << ')'
+        << badges_for(ansi, supported, enabled, aspirational) << '\n';
 }
 
 bool metric_enabled(const SessionState* session, std::string_view slot, std::string_view name,
@@ -362,8 +368,11 @@ void render_create_session(std::ostream& out, const RenderConfig& cfg, CatalogMo
 
 namespace {
 
-// Stable bucket order for the device-list section headers.
-constexpr std::array<std::string_view, 3> kKindOrder = {"CPU", "GPU", "NIC"};
+// Stable bucket order for the device-list section headers. Matches the
+// metric-stage heading style used inside Device Detail: dim, bracketed,
+// 2-space indent. AINIC supersedes the legacy "NIC" bucket label so the
+// AI-class NIC catalogue surfaces under the same heading in both modes.
+constexpr std::array<std::string_view, 3> kKindOrder = {"CPU", "GPU", "AINIC"};
 
 int kind_rank(std::string_view kind) noexcept {
     for (int i = 0; i < static_cast<int>(kKindOrder.size()); ++i) {
@@ -395,13 +404,18 @@ DeviceColWidths compute_device_widths(const std::vector<Device>& devices) {
 }
 
 void render_device_row(std::ostream& out, const Ansi& ansi, const Device& dev,
-                       const DeviceColWidths& w, bool selected) {
+                       const DeviceColWidths& w, bool selected, std::size_t one_based_index,
+                       std::size_t index_width) {
     const std::string_view cursor = selected ? "> " : "  ";
     const std::string_view glyph = dev.supported ? kGlyphOk : kGlyphWarn;
     const std::string_view glyph_color = dev.supported ? ansi.green : ansi.yellow;
     constexpr std::string_view kGutter = "   ";
 
-    out << cursor << glyph_color << glyph << ansi.reset << ' ';
+    const auto idx_str = std::to_string(one_based_index);
+    if (index_width > idx_str.size()) {
+        out << std::string(index_width - idx_str.size(), ' ');
+    }
+    out << cursor << idx_str << ". " << glyph_color << glyph << ansi.reset << ' ';
     out << dev.display_name;
     if (w.name > dev.display_name.size()) {
         out << std::string(w.name - dev.display_name.size(), ' ');
@@ -429,6 +443,7 @@ void render_device_list_body(std::ostream& out, const Ansi& ansi,
     }
     const auto order = kind_sorted_device_indices(devices);
     const auto widths = compute_device_widths(devices);
+    const auto index_width = std::to_string(order.size()).size();
 
     std::string_view current_bucket;
     bool first_bucket = true;
@@ -441,9 +456,9 @@ void render_device_list_body(std::ostream& out, const Ansi& ansi,
             }
             first_bucket = false;
             current_bucket = bucket;
-            out << "  " << ansi.bold << bucket << ansi.reset << '\n';
+            out << "  " << ansi.dim << "[" << bucket << "]" << ansi.reset << '\n';
         }
-        render_device_row(out, ansi, d, widths, i == selected_index);
+        render_device_row(out, ansi, d, widths, i == selected_index, i + 1, index_width);
     }
 }
 
@@ -530,7 +545,7 @@ void render_paginated_metric_block(std::ostream& out, const Ansi& ansi,
                                    const std::vector<CombinedRow>& rows, const PageWindow& w,
                                    const Device& device, const SessionState* session,
                                    std::span<const std::uint32_t> supported_ids,
-                                   std::size_t selected_index) {
+                                   std::size_t selected_index, bool show_checkbox) {
     bool stage_known = false;
     profcat::Stage current_stage = profcat::Stage::Cpu;
     for (std::size_t i = w.begin; i < w.end; ++i) {
@@ -549,7 +564,7 @@ void render_paginated_metric_block(std::ostream& out, const Ansi& ansi,
         // Numbering stays stable and global: page 1 rows 1-10, page 2 rows 11-20,
         // etc. Index in the combined list is 0-based; display as 1-based.
         render_metric_row(out, ansi, static_cast<int>(i + 1), *row.metric, aspirational, supported,
-                          enabled, checkbox, i == selected_index);
+                          enabled, checkbox, i == selected_index, show_checkbox);
     }
 }
 
@@ -586,8 +601,11 @@ std::size_t device_detail_total_pages(const Device& device, std::size_t page_siz
 
 void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Device& device,
                           const SessionState* session_or_null,
-                          std::span<const std::uint32_t> supported_ids, PaginatedDetail page) {
+                          std::span<const std::uint32_t> supported_ids, PaginatedDetail page,
+                          bool read_only) {
     const auto ansi = make_ansi(cfg);
+    const std::string_view footer_hints =
+        read_only ? kFooterHintsDetailReadOnly : kFooterHintsDetail;
     render_chrome_open(out, cfg, "");
 
     if (!device.supported) {
@@ -595,7 +613,7 @@ void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Devi
         out << "  " << ansi.red << "Unsupported: " << ansi.reset
             << device.unsupported_reason.value_or("no detail") << '\n';
         out << '\n';
-        render_chrome_close(out, cfg, kFooterHintsDetail);
+        render_chrome_close(out, cfg, footer_hints);
         return;
     }
 
@@ -603,9 +621,9 @@ void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Devi
     const auto win = window_for(rows.size(), page);
     render_detail_title_with_page(out, ansi, device, win);
     render_paginated_metric_block(out, ansi, rows, win, device, session_or_null, supported_ids,
-                                  kNoSelection);
+                                  kNoSelection, /*show_checkbox=*/!read_only);
     out << '\n';
-    render_chrome_close(out, cfg, kFooterHintsDetail);
+    render_chrome_close(out, cfg, footer_hints);
 }
 
 void render_metric_detail(std::ostream& out, const RenderConfig& cfg,
@@ -704,8 +722,10 @@ void render_device_list_header(std::ostream& out, const RenderConfig& cfg) {
 void render_device_detail_screen(std::ostream& out, const RenderConfig& cfg, const Device& device,
                                  const SessionState* session,
                                  std::span<const std::uint32_t> supported_ids, PaginatedDetail page,
-                                 std::size_t selected_index) {
+                                 std::size_t selected_index, bool read_only) {
     const auto ansi = make_ansi(cfg);
+    const std::string_view footer_hints =
+        read_only ? kFooterHintsDetailReadOnly : kFooterHintsDetail;
     render_chrome_open(out, cfg, "");
 
     if (!device.supported) {
@@ -713,7 +733,7 @@ void render_device_detail_screen(std::ostream& out, const RenderConfig& cfg, con
         out << "  " << ansi.red << "Unsupported: " << ansi.reset
             << device.unsupported_reason.value_or("no detail") << '\n';
         out << '\n';
-        render_chrome_close(out, cfg, kFooterHintsDetail);
+        render_chrome_close(out, cfg, footer_hints);
         return;
     }
 
@@ -721,9 +741,9 @@ void render_device_detail_screen(std::ostream& out, const RenderConfig& cfg, con
     const auto win = window_for(rows.size(), page);
     render_detail_title_with_page(out, ansi, device, win);
     render_paginated_metric_block(out, ansi, rows, win, device, session, supported_ids,
-                                  selected_index);
+                                  selected_index, /*show_checkbox=*/!read_only);
     out << '\n';
-    render_chrome_close(out, cfg, kFooterHintsDetail);
+    render_chrome_close(out, cfg, footer_hints);
 }
 
 void render_preset_preview_header(std::ostream& out, const RenderConfig& cfg,
@@ -755,6 +775,9 @@ std::string_view footer_hints_for_devices() noexcept {
 }
 std::string_view footer_hints_for_device_detail() noexcept {
     return kFooterHintsDetail;
+}
+std::string_view footer_hints_for_device_detail_read_only() noexcept {
+    return kFooterHintsDetailReadOnly;
 }
 std::string_view footer_hints_for_metric_detail() noexcept {
     return kFooterHintsMetricDetail;

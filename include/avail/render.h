@@ -86,11 +86,14 @@ void render_create_session(std::ostream& out, const RenderConfig& cfg, CatalogMo
 /**
  * Render the section-grouped device list with status glyphs and footer hints.
  *
- * Devices are bucketed by @c kind into stable groups (CPU > GPU > NIC > other).
- * Each row prefixes a status glyph (@c ● green for supported, @c ⚠ yellow for
- * unsupported), followed by three columns padded to the widest entry across all
- * devices. @c selected_index points at a device row in the bucket-sorted flat
- * order and decorates that row with a @c "> " cursor.
+ * Devices are bucketed by @c kind into stable groups (CPU > GPU > AINIC > other),
+ * each preceded by a dim bracketed heading (e.g. @c "  [CPU]") that matches the
+ * metric-stage heading style. Rows are flat-numbered globally (1-based), so a
+ * single counter spans every bucket. Each row prefixes a status glyph
+ * (@c ● green for supported, @c ⚠ yellow for unsupported), followed by three
+ * columns padded to the widest entry across all devices. @c selected_index
+ * points at a device row in the bucket-sorted flat order and decorates that
+ * row with a @c "> " cursor. Empty buckets emit no heading at all.
  *
  * @c show_footer_hints toggles the footer rule + key-hint line; pass false when
  * the caller draws its own footer (e.g. legacy demo).
@@ -100,7 +103,7 @@ void render_device_list(std::ostream& out, const RenderConfig& cfg,
                         bool show_footer_hints);
 
 /**
- * Bucket devices by kind in stable order (CPU > GPU > NIC > other). Within
+ * Bucket devices by kind in stable order (CPU > GPU > AINIC > other). Within
  * each bucket the relative order from @c devices is preserved. Returns
  * indices into @c devices.
  */
@@ -135,9 +138,16 @@ struct PaginatedDetail {
 [[nodiscard]] std::size_t device_detail_total_pages(const Device& device,
                                                     std::size_t page_size) noexcept;
 
+/**
+ * Render a static (non-interactive) Device Detail frame. When @p read_only is
+ * true the metric rows omit the @c [x]/[ ] checkbox glyph and the footer hints
+ * drop the "Enter toggle" affordance, signalling that this view is browse-only
+ * (matches Inspect Device Detail in interactive mode).
+ */
 void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Device& device,
                           const SessionState* session_or_null,
-                          std::span<const std::uint32_t> supported_ids, PaginatedDetail page = {});
+                          std::span<const std::uint32_t> supported_ids, PaginatedDetail page = {},
+                          bool read_only = false);
 
 /**
  * Render the full Device Detail screen for interactive mode: chrome open,
@@ -151,7 +161,7 @@ void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Devi
 void render_device_detail_screen(std::ostream& out, const RenderConfig& cfg, const Device& device,
                                  const SessionState* session,
                                  std::span<const std::uint32_t> supported_ids, PaginatedDetail page,
-                                 std::size_t selected_index);
+                                 std::size_t selected_index, bool read_only = false);
 void render_metric_detail(std::ostream& out, const RenderConfig& cfg,
                           const profcat::MetricDescriptor& metric, bool aspirational,
                           bool supported);
@@ -196,6 +206,7 @@ void render_preset_preview_header(std::ostream& out, const RenderConfig& cfg,
 [[nodiscard]] std::string_view footer_hints_for_create_session() noexcept;
 [[nodiscard]] std::string_view footer_hints_for_devices() noexcept;
 [[nodiscard]] std::string_view footer_hints_for_device_detail() noexcept;
+[[nodiscard]] std::string_view footer_hints_for_device_detail_read_only() noexcept;
 [[nodiscard]] std::string_view footer_hints_for_metric_detail() noexcept;
 [[nodiscard]] std::string_view footer_hints_for_preset_preview() noexcept;
 [[nodiscard]] std::string_view footer_hints_for_confirm() noexcept;

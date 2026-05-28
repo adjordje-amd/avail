@@ -352,9 +352,10 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             } else if (is_device_detail_screen && active_device < devices.size()) {
                 const auto& dev = devices[active_device];
                 const auto supported = active_metric_catalog().supported_ids(dev.slot);
+                const bool read_only = current == Screen::InspectDeviceDetail;
                 render_device_detail_screen(out, cfg, dev, &session, supported,
                                             PaginatedDetail{detail_page_index},
-                                            menu.selected_index());
+                                            menu.selected_index(), read_only);
             } else if (uses_shared_menu_items) {
                 render_menu_items(out, cfg, menu.items(), menu.selected_index());
                 out << '\n';
@@ -578,14 +579,13 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                     const bool entering_create = (current == Screen::CreateDeviceList);
                     current =
                         entering_create ? Screen::CreateDeviceDetail : Screen::InspectDeviceDetail;
-                    // Seed defaults for BOTH modes. Inspect mode shows a
-                    // transient session (toggles never apply as a preset);
-                    // checkboxes need a meaningful starting state.
-                    if (!session.is_seeded(devices[i].slot)) {
-                        auto& mc = entering_create
-                                       ? ((mode == CatalogMode::Online) ? m_online_metrics
-                                                                        : m_offline_metrics)
-                                       : m_online_metrics;
+                    // Seed defaults ONLY for Create mode. Inspect Device Detail
+                    // is read-only by intent: no checkboxes are rendered and
+                    // Enter is a no-op, so mutating the session here would be
+                    // both invisible and surprising.
+                    if (entering_create && !session.is_seeded(devices[i].slot)) {
+                        auto& mc =
+                            (mode == CatalogMode::Online) ? m_online_metrics : m_offline_metrics;
                         session.seed_defaults(devices[i].slot, mc.measure_metrics(devices[i].slot),
                                               mc.configure_metrics(devices[i].slot),
                                               mc.supported_ids(devices[i].slot));
@@ -595,10 +595,9 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             }
             continue;
         }
-        if (current == Screen::CreateDeviceDetail || current == Screen::InspectDeviceDetail) {
-            // Enter toggles the selected metric. Inspect mode uses a
-            // transient session (toggles never apply as a preset). Use 'i'
-            // to open the metric detail view, q/b/Esc to go back.
+        if (current == Screen::CreateDeviceDetail) {
+            // Enter toggles the selected metric in Create mode. Use 'i' to
+            // open the metric detail view, q/b/Esc to go back.
             if (active_device < devices.size() && id.size() > 2 && id[1] == ':') {
                 const auto& dev = devices[active_device];
                 const std::size_t k = std::stoull(id.substr(2));
@@ -608,6 +607,11 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                     session.toggle_configure(dev.slot, dev.configure[k].name);
                 }
             }
+            continue;
+        }
+        if (current == Screen::InspectDeviceDetail) {
+            // Inspect Device Detail is read-only by intent: Enter is a no-op.
+            // 'i' opens metric detail (handled above), q/b/Esc go back.
             continue;
         }
         if (current == Screen::PresetPreview) {
@@ -655,6 +659,11 @@ int App::run_demo_frames(std::ostream& out, const RenderConfig& cfg) {
     if (!online.empty()) {
         const auto supported = m_online_metrics.supported_ids(online[0].slot);
         render_device_detail(out, cfg, online[0], &session, supported);
+        sep();
+        // Read-only Inspect Device Detail frame: no checkboxes, no Enter
+        // toggle in the footer hints.
+        render_device_detail(out, cfg, online[0], &session, supported, PaginatedDetail{},
+                             /*read_only=*/true);
         sep();
     }
     if (!online.empty() && !online[0].measure.empty()) {

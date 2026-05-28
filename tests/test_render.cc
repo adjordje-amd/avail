@@ -502,7 +502,7 @@ std::vector<avail::Device> make_three_kinds() {
         make_dev("cpu0", "CPU", "AMD Ryzen", "16C / 32T", "Zen5", true),
         make_dev("gpu0", "GPU", "Radeon RX", "gfx1201", "16 GB", true),
         make_dev("gpu1", "GPU", "Integrated", "gfx1036", "unsupported", false),
-        make_dev("nic0", "NIC", "Pensando", "200 Gb/s", "", true),
+        make_dev("nic0", "AINIC", "Pensando", "200 Gb/s", "", true),
     };
 }
 
@@ -513,14 +513,14 @@ TEST(render_test, device_list_groups_by_kind_in_stable_order) {
     std::ostringstream os;
     avail::render_device_list(os, color_off(), devs, 0, true);
     const auto out = os.str();
-    const auto cpu = out.find("CPU\n");
-    const auto gpu = out.find("GPU\n");
-    const auto nic = out.find("NIC\n");
+    const auto cpu = out.find("[CPU]\n");
+    const auto gpu = out.find("[GPU]\n");
+    const auto ainic = out.find("[AINIC]\n");
     ASSERT_NE(cpu, std::string::npos);
     ASSERT_NE(gpu, std::string::npos);
-    ASSERT_NE(nic, std::string::npos);
+    ASSERT_NE(ainic, std::string::npos);
     EXPECT_LT(cpu, gpu);
-    EXPECT_LT(gpu, nic);
+    EXPECT_LT(gpu, ainic);
 }
 
 TEST(render_test, device_list_renders_status_glyphs) {
@@ -575,14 +575,14 @@ TEST(render_test, device_list_omits_footer_when_disabled) {
     EXPECT_EQ(os.str().find("q back"), std::string::npos);
 }
 
-TEST(render_test, kind_sorted_device_indices_buckets_cpu_gpu_nic) {
+TEST(render_test, kind_sorted_device_indices_buckets_cpu_gpu_ainic) {
     const auto devs = make_three_kinds();
     const auto order = avail::kind_sorted_device_indices(devs);
     ASSERT_EQ(order.size(), 4U);
     EXPECT_EQ(devs[order[0]].kind, "CPU");
     EXPECT_EQ(devs[order[1]].kind, "GPU");
     EXPECT_EQ(devs[order[2]].kind, "GPU");
-    EXPECT_EQ(devs[order[3]].kind, "NIC");
+    EXPECT_EQ(devs[order[3]].kind, "AINIC");
 }
 
 TEST(render_test, preset_preview_empty_shows_hint) {
@@ -771,6 +771,114 @@ TEST(render_test, device_detail_out_of_range_page_clamps_to_last) {
     std::ostringstream os;
     avail::render_device_detail(os, color_off(), d, nullptr, supported, avail::PaginatedDetail{99});
     EXPECT_NE(os.str().find("(Page 3/3)"), std::string::npos);
+}
+
+// --- Slice: device-list grouped headings + flat numbering ---
+
+TEST(render_test, device_list_uses_bracketed_dim_headings) {
+    const auto devs = make_three_kinds();
+    std::ostringstream os;
+    avail::render_device_list(os, color_off(), devs, 0, true);
+    const auto out = os.str();
+    // Bare-bucket labels without brackets must not appear as section
+    // headings (they may still occur inside device names, hence \n suffix).
+    EXPECT_EQ(out.find("  CPU\n"), std::string::npos);
+    EXPECT_EQ(out.find("  GPU\n"), std::string::npos);
+    EXPECT_EQ(out.find("  AINIC\n"), std::string::npos);
+    EXPECT_NE(out.find("  [CPU]\n"), std::string::npos);
+    EXPECT_NE(out.find("  [GPU]\n"), std::string::npos);
+    EXPECT_NE(out.find("  [AINIC]\n"), std::string::npos);
+}
+
+TEST(render_test, device_list_numbering_is_flat_global) {
+    const auto devs = make_three_kinds();  // 1 CPU, 2 GPU, 1 AINIC = 4 rows
+    std::ostringstream os;
+    avail::render_device_list(os, color_off(), devs, 0, true);
+    const auto out = os.str();
+    // Flat global indices 1..4 must each appear exactly once as row prefix
+    // "N. " preceded by cursor padding. No per-bucket reset (no second "1.").
+    EXPECT_NE(out.find("1. "), std::string::npos);
+    EXPECT_NE(out.find("2. "), std::string::npos);
+    EXPECT_NE(out.find("3. "), std::string::npos);
+    EXPECT_NE(out.find("4. "), std::string::npos);
+    // Per-bucket reset would produce two "1. " rows; flat numbering must
+    // produce exactly one occurrence.
+    EXPECT_EQ(out.find("1. ", out.find("1. ") + 1), std::string::npos);
+}
+
+TEST(render_test, device_list_omits_empty_buckets) {
+    // GPU-only device set: CPU and AINIC headings must not appear.
+    std::vector<avail::Device> devs = {
+        make_dev("gpu0", "GPU", "Radeon", "gfx1201", "16 GB", true),
+    };
+    std::ostringstream os;
+    avail::render_device_list(os, color_off(), devs, 0, true);
+    const auto out = os.str();
+    EXPECT_NE(out.find("[GPU]"), std::string::npos);
+    EXPECT_EQ(out.find("[CPU]"), std::string::npos);
+    EXPECT_EQ(out.find("[AINIC]"), std::string::npos);
+}
+
+// --- Slice: Inspect Device Detail is read-only ---
+
+TEST(render_test, device_detail_read_only_omits_checkbox) {
+    const auto& sq_waves = lookup_or_die(0x2001);
+    avail::Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "test";
+    d.supported = true;
+    d.measure = {sq_waves};
+    std::uint32_t supported_arr[] = {sq_waves.id};
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported_arr,
+                                avail::PaginatedDetail{}, /*read_only=*/true);
+    const auto out = os.str();
+    EXPECT_EQ(out.find("[x]"), std::string::npos);
+    EXPECT_EQ(out.find("[ ]"), std::string::npos);
+}
+
+TEST(render_test, device_detail_read_only_footer_drops_enter_toggle) {
+    const auto& sq_waves = lookup_or_die(0x2001);
+    avail::Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "test";
+    d.supported = true;
+    d.measure = {sq_waves};
+    std::uint32_t supported_arr[] = {sq_waves.id};
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported_arr,
+                                avail::PaginatedDetail{}, /*read_only=*/true);
+    const auto out = os.str();
+    EXPECT_EQ(out.find("Enter toggle"), std::string::npos);
+    EXPECT_NE(out.find("i info"), std::string::npos);
+    EXPECT_NE(out.find("q back"), std::string::npos);
+}
+
+TEST(render_test, device_detail_write_mode_keeps_checkbox_and_enter_toggle) {
+    const auto& sq_waves = lookup_or_die(0x2001);
+    avail::Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "test";
+    d.supported = true;
+    d.measure = {sq_waves};
+    std::uint32_t supported_arr[] = {sq_waves.id};
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported_arr,
+                                avail::PaginatedDetail{}, /*read_only=*/false);
+    const auto out = os.str();
+    // Default (write) mode keeps the checkbox column and the toggle hint.
+    EXPECT_NE(out.find("[ ]"), std::string::npos);
+    EXPECT_NE(out.find("Enter toggle"), std::string::npos);
+}
+
+TEST(render_test, footer_hints_for_device_detail_read_only_accessor) {
+    const auto hints = avail::footer_hints_for_device_detail_read_only();
+    EXPECT_EQ(hints.find("Enter toggle"), std::string::npos);
+    EXPECT_NE(hints.find("i info"), std::string::npos);
+    EXPECT_NE(hints.find("q back"), std::string::npos);
 }
 
 }  // namespace
