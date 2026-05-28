@@ -106,9 +106,38 @@ void render_device_list(std::ostream& out, const RenderConfig& cfg,
  */
 [[nodiscard]] std::vector<std::size_t>
 kind_sorted_device_indices(const std::vector<Device>& devices);
+/**
+ * Fixed page size for the Device Detail metric list. The combined
+ * Measure + Configure virtual list is sliced into chunks of this size;
+ * see @c PaginatedDetail and the device-detail renderers below.
+ */
+inline constexpr std::size_t kDeviceDetailPageSize = 10;
+
+/**
+ * Pagination cursor for a Device Detail screen.
+ *
+ * @c page_index is 0-based. @c page_size is the number of metric rows
+ * to render before flipping to the next page; defaults to
+ * @c kDeviceDetailPageSize. Pass an out-of-range @c page_index and the
+ * renderer clamps to the last available page so callers do not have to
+ * branch on the device's metric count.
+ */
+struct PaginatedDetail {
+    std::size_t page_index = 0;
+    std::size_t page_size = kDeviceDetailPageSize;
+};
+
+/**
+ * Total page count for a Device Detail screen given the device's
+ * combined Measure + Configure metric count.
+ * @return at least 1 (single empty page for devices with no metrics).
+ */
+[[nodiscard]] std::size_t device_detail_total_pages(const Device& device,
+                                                    std::size_t page_size) noexcept;
+
 void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Device& device,
                           const SessionState* session_or_null,
-                          std::span<const std::uint32_t> supported_ids);
+                          std::span<const std::uint32_t> supported_ids, PaginatedDetail page = {});
 void render_metric_detail(std::ostream& out, const RenderConfig& cfg,
                           const profcat::MetricDescriptor& metric, bool aspirational,
                           bool supported);
@@ -143,7 +172,8 @@ void render_device_list_screen(std::ostream& out, const RenderConfig& cfg,
 void render_device_list_header(std::ostream& out, const RenderConfig& cfg);
 void render_device_detail_header(std::ostream& out, const RenderConfig& cfg, const Device& device,
                                  const SessionState* session_or_null,
-                                 std::span<const std::uint32_t> supported_ids);
+                                 std::span<const std::uint32_t> supported_ids,
+                                 PaginatedDetail page = {});
 void render_preset_preview_header(std::ostream& out, const RenderConfig& cfg,
                                   const SessionState& session);
 

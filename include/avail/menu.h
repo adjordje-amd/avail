@@ -35,9 +35,19 @@ struct MenuItem {
  * Pure, termios-free menu state + renderer.
  *
  * Holds an ordered list of @c MenuItem and a current selection index.
- * Arrow Up / Down rotate the selection with wrap-around. Render emits
- * the list with the current row highlighted; the rest of the screen
- * (titles, headers, body text) is the caller's responsibility.
+ * Arrow Up / Down rotate the selection (with wrap-around in unpaginated
+ * mode, or clamped within the current page when @c set_page_size has
+ * been called with a non-zero value). Render emits the list with the
+ * current row highlighted; the rest of the screen (titles, headers,
+ * body text) is the caller's responsibility.
+ *
+ * Pagination is opt-in. Default construction yields the legacy
+ * wrap-around behaviour. Call @c set_page_size(n) to slice the item
+ * list into pages of @p n items each. Page math:
+ *  - @c total_pages() is @c 1 for empty lists (the empty first page).
+ *  - @c next_page / @c prev_page clamp at the edges (no wrap).
+ *  - Switching page snaps the selection to the first row on the new
+ *    page so a subsequent Up / Down stays within the visible slice.
  */
 class MenuController {
   public:
@@ -45,6 +55,21 @@ class MenuController {
 
     void move_up() noexcept;
     void move_down() noexcept;
+
+    /**
+     * Enable / reconfigure pagination.
+     * @param page_size Items per page. Zero disables pagination (Up / Down
+     *                  wrap around the full list, as in the legacy mode).
+     */
+    void set_page_size(std::size_t page_size) noexcept;
+    void next_page() noexcept;
+    void prev_page() noexcept;
+
+    [[nodiscard]] std::size_t page_size() const noexcept { return m_page_size; }
+    [[nodiscard]] std::size_t current_page() const noexcept;
+    [[nodiscard]] std::size_t total_pages() const noexcept;
+    [[nodiscard]] std::size_t page_begin() const noexcept;
+    [[nodiscard]] std::size_t page_end() const noexcept;
 
     [[nodiscard]] std::size_t selected_index() const noexcept { return m_index; }
     [[nodiscard]] const MenuItem& current() const noexcept { return m_items[m_index]; }
@@ -63,6 +88,7 @@ class MenuController {
   private:
     std::vector<MenuItem> m_items;
     std::size_t m_index = 0;
+    std::size_t m_page_size = 0;  // 0 means pagination disabled
 };
 
 }  // namespace avail

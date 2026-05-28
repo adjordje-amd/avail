@@ -192,6 +192,7 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
     SessionState session;
     std::size_t active_device = 0;
     std::size_t active_metric = 0;
+    std::size_t detail_page_index = 0;
 
     auto active_catalog = [&]() -> IDeviceCatalog& {
         if (current == Screen::InspectDeviceList || current == Screen::InspectDeviceDetail) {
@@ -230,14 +231,16 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             if (active_device < devices.size()) {
                 const auto& dev = devices[active_device];
                 const auto supported = active_metric_catalog().supported_ids(dev.slot);
-                render_device_detail_header(out, cfg, dev, &session, supported);
+                render_device_detail_header(out, cfg, dev, &session, supported,
+                                            PaginatedDetail{detail_page_index});
             }
             break;
         case Screen::InspectDeviceDetail:
             if (active_device < devices.size()) {
                 const auto& dev = devices[active_device];
                 const auto supported = active_metric_catalog().supported_ids(dev.slot);
-                render_device_detail_header(out, cfg, dev, nullptr, supported);
+                render_device_detail_header(out, cfg, dev, nullptr, supported,
+                                            PaginatedDetail{detail_page_index});
             }
             break;
         case Screen::PresetPreview:
@@ -332,6 +335,20 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
         }
 
         MenuController menu(std::move(items));
+        if (current == Screen::CreateDeviceDetail || current == Screen::InspectDeviceDetail) {
+            menu.set_page_size(kDeviceDetailPageSize);
+            if (detail_page_index >= menu.total_pages()) {
+                detail_page_index = 0;
+            }
+            // Snap the selection into the requested page so Up / Down clamp
+            // within the visible slice the header advertises.
+            while (menu.current_page() < detail_page_index) {
+                menu.next_page();
+            }
+            while (menu.current_page() > detail_page_index) {
+                menu.prev_page();
+            }
+        }
         bool committed = false;
         bool exit_now = false;
         bool back_now = false;
@@ -394,6 +411,16 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             }
             if (ev.key == Key::Down) {
                 menu.move_down();
+                continue;
+            }
+            if ((ev.key == Key::Left || ev.key == Key::Right) &&
+                (current == Screen::CreateDeviceDetail || current == Screen::InspectDeviceDetail)) {
+                if (ev.key == Key::Left) {
+                    menu.prev_page();
+                } else {
+                    menu.next_page();
+                }
+                detail_page_index = menu.current_page();
                 continue;
             }
             if (ev.key == Key::Enter) {
@@ -490,6 +517,7 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             for (std::size_t i = 0; i < devices.size(); ++i) {
                 if (devices[i].slot == id) {
                     active_device = i;
+                    detail_page_index = 0;
                     const bool entering_create = (current == Screen::CreateDeviceList);
                     current =
                         entering_create ? Screen::CreateDeviceDetail : Screen::InspectDeviceDetail;
@@ -619,8 +647,12 @@ int App::run_demo_frames(std::ostream& out, const RenderConfig& cfg) {
     sep();
     if (online.size() > 1) {
         const auto supported = m_online_metrics.supported_ids(online[1].slot);
-        render_device_detail(out, cfg, online[1], nullptr, supported);
+        render_device_detail(out, cfg, online[1], nullptr, supported, PaginatedDetail{0});
         sep();
+        if (device_detail_total_pages(online[1], kDeviceDetailPageSize) > 1) {
+            render_device_detail(out, cfg, online[1], nullptr, supported, PaginatedDetail{1});
+            sep();
+        }
     }
     if (online.size() > 1 && !online[1].measure.empty()) {
         const auto& md = online[1].measure[0];

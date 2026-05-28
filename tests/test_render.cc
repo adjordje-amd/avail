@@ -507,4 +507,126 @@ TEST(render_test, preset_preview_uses_cursor_and_descriptions) {
     EXPECT_EQ(out.find("  2. "), std::string::npos);
 }
 
+// --- Device Detail pagination (kDeviceDetailPageSize == 10) ---
+
+namespace {
+
+avail::Device make_paginated_device(std::size_t measure_count, std::size_t configure_count) {
+    static const std::uint32_t kMeasureIds[] = {
+        0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009,
+        0x200A, 0x200B, 0x200C, 0x4001, 0x4002, 0x4003, 0x4004, 0x4005, 0x4006,
+        0x4007, 0x4008, 0x5001, 0x5002, 0x5003, 0x5004, 0x5005,
+    };
+    static const std::uint32_t kConfigureIds[] = {
+        0x3001, 0x3002, 0x3003, 0x3004, 0x3005, 0x3006, 0x3007, 0x3008,
+    };
+    avail::Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "Radeon RX 9070 XT";
+    d.supported = true;
+    for (std::size_t i = 0; i < measure_count && i < std::size(kMeasureIds); ++i) {
+        d.measure.push_back(lookup_or_die(kMeasureIds[i]));
+    }
+    for (std::size_t i = 0; i < configure_count && i < std::size(kConfigureIds); ++i) {
+        d.configure.push_back(lookup_or_die(kConfigureIds[i]));
+    }
+    return d;
+}
+
+}  // namespace
+
+TEST(render_test, device_detail_total_pages_matches_combined_metric_count) {
+    const auto d_small = make_paginated_device(2, 0);
+    EXPECT_EQ(avail::device_detail_total_pages(d_small, avail::kDeviceDetailPageSize), 1u);
+    const auto d_exact = make_paginated_device(10, 0);
+    EXPECT_EQ(avail::device_detail_total_pages(d_exact, avail::kDeviceDetailPageSize), 1u);
+    const auto d_two = make_paginated_device(15, 0);
+    EXPECT_EQ(avail::device_detail_total_pages(d_two, avail::kDeviceDetailPageSize), 2u);
+    const auto d_three = make_paginated_device(17, 6);
+    EXPECT_EQ(avail::device_detail_total_pages(d_three, avail::kDeviceDetailPageSize), 3u);
+}
+
+TEST(render_test, device_detail_page_one_shows_indicator_and_first_ten_rows) {
+    const auto d = make_paginated_device(17, 6);
+    std::vector<std::uint32_t> supported;
+    for (const auto& m : d.measure) {
+        supported.push_back(m.id);
+    }
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported, avail::PaginatedDetail{0});
+    const auto out = os.str();
+    EXPECT_NE(out.find("(Page 1/3)"), std::string::npos);
+    EXPECT_NE(out.find("  1. "), std::string::npos);
+    EXPECT_NE(out.find(" 10. "), std::string::npos);
+    EXPECT_EQ(out.find(" 11. "), std::string::npos);
+    EXPECT_EQ(out.find(" 21. "), std::string::npos);
+}
+
+TEST(render_test, device_detail_page_two_shows_rows_eleven_through_twenty) {
+    const auto d = make_paginated_device(17, 6);
+    std::vector<std::uint32_t> supported;
+    for (const auto& m : d.measure) {
+        supported.push_back(m.id);
+    }
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported, avail::PaginatedDetail{1});
+    const auto out = os.str();
+    EXPECT_NE(out.find("(Page 2/3)"), std::string::npos);
+    EXPECT_NE(out.find(" 11. "), std::string::npos);
+    EXPECT_NE(out.find(" 20. "), std::string::npos);
+    EXPECT_EQ(out.find("  1. "), std::string::npos);
+    EXPECT_EQ(out.find(" 21. "), std::string::npos);
+}
+
+TEST(render_test, device_detail_page_three_shows_remaining_rows) {
+    const auto d = make_paginated_device(17, 6);
+    std::vector<std::uint32_t> supported;
+    for (const auto& m : d.measure) {
+        supported.push_back(m.id);
+    }
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported, avail::PaginatedDetail{2});
+    const auto out = os.str();
+    EXPECT_NE(out.find("(Page 3/3)"), std::string::npos);
+    EXPECT_NE(out.find(" 21. "), std::string::npos);
+    EXPECT_NE(out.find(" 23. "), std::string::npos);
+    EXPECT_EQ(out.find(" 11. "), std::string::npos);
+    EXPECT_EQ(out.find(" 24. "), std::string::npos);
+}
+
+TEST(render_test, device_detail_single_page_suppresses_indicator) {
+    const auto d = make_paginated_device(3, 0);
+    std::vector<std::uint32_t> supported;
+    for (const auto& m : d.measure) {
+        supported.push_back(m.id);
+    }
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported, avail::PaginatedDetail{0});
+    const auto out = os.str();
+    EXPECT_EQ(out.find("(Page "), std::string::npos);
+}
+
+TEST(render_test, device_detail_footer_includes_page_arrows) {
+    const auto d = make_paginated_device(17, 6);
+    std::vector<std::uint32_t> supported;
+    for (const auto& m : d.measure) {
+        supported.push_back(m.id);
+    }
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported, avail::PaginatedDetail{0});
+    const auto out = os.str();
+    EXPECT_NE(out.find("page"), std::string::npos);
+    EXPECT_NE(out.find("\xe2\x86\x90"), std::string::npos);
+    EXPECT_NE(out.find("\xe2\x86\x92"), std::string::npos);
+}
+
+TEST(render_test, device_detail_out_of_range_page_clamps_to_last) {
+    const auto d = make_paginated_device(17, 6);
+    std::vector<std::uint32_t> supported;
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported, avail::PaginatedDetail{99});
+    EXPECT_NE(os.str().find("(Page 3/3)"), std::string::npos);
+}
+
 }  // namespace
