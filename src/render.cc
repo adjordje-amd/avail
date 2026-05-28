@@ -39,21 +39,27 @@ Ansi make_ansi(const RenderConfig& cfg) {
 namespace {
 
 constexpr std::string_view kBadgeAspirational = "[demo: proposed UX]";
-constexpr std::string_view kRule = "----------------------------------------";
 // U+2500 BOX DRAWINGS LIGHT HORIZONTAL, encoded as three UTF-8 bytes.
 constexpr std::string_view kRuleGlyph = "\xe2\x94\x80";
 // U+25CF BLACK CIRCLE (supported indicator).
 constexpr std::string_view kGlyphOk = "\xe2\x97\x8f";
 // U+26A0 WARNING SIGN (unsupported indicator).
 constexpr std::string_view kGlyphWarn = "\xe2\x9a\xa0";
-constexpr int kDefaultRuleCols = 55;
+// U+2191 UPWARDS ARROW + U+2193 DOWNWARDS ARROW for hint glyphs.
+constexpr std::string_view kFooterHintsMainMenu = "\xe2\x86\x91/\xe2\x86\x93 move   "
+                                                  "Enter select   q quit";
+constexpr std::string_view kFooterHintsModeSelect = "\xe2\x86\x91/\xe2\x86\x93 move   "
+                                                    "Enter select   q back";
+constexpr std::string_view kFooterHintsCreateSession = "\xe2\x86\x91/\xe2\x86\x93 move   "
+                                                       "Enter select   q back";
 constexpr std::string_view kFooterHintsDevices = "\xe2\x86\x91/\xe2\x86\x93 move   "
                                                  "Enter select   q back";
 constexpr std::string_view kFooterHintsDetail = "\xe2\x86\x91/\xe2\x86\x93 move   "
                                                 "Enter toggle   q back";
-constexpr std::string_view kFooterHintsMainMenu = "\xe2\x86\x91/\xe2\x86\x93 move   "
-                                                  "Enter select   q quit";
-// U+2191 UPWARDS ARROW + U+2193 DOWNWARDS ARROW for hints.
+constexpr std::string_view kFooterHintsMetricDetail = "q back";
+constexpr std::string_view kFooterHintsPresetPreview = "\xe2\x86\x91/\xe2\x86\x93 move   "
+                                                       "Enter select   q back";
+constexpr std::string_view kFooterHintsConfirm = "y yes   n no   q back";
 
 // Hardcoded product banner (ROCM-SYSTEMS / AVAIL ASCII art).
 // 79 columns wide; rule width falls back to 81 (banner + 2 padding) off-TTY.
@@ -74,18 +80,6 @@ constexpr std::string_view kBuildInfo =
 
 constexpr int kMainMenuRuleFallback = 81;
 constexpr std::string_view kMainMenuItemGutter = "      ";  // 6 spaces between label and desc
-
-int resolve_rule_width(const RenderConfig& cfg) noexcept {
-    if (cfg.rule_width > 0) {
-        return cfg.rule_width;
-    }
-    winsize ws{};
-    if (::isatty(STDOUT_FILENO) != 0 && ::ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 &&
-        ws.ws_col > 0) {
-        return ws.ws_col;
-    }
-    return kDefaultRuleCols;
-}
 
 int resolve_main_menu_rule_width(const RenderConfig& cfg) noexcept {
     if (cfg.rule_width > 0) {
@@ -108,18 +102,9 @@ std::string repeat_glyph(std::string_view glyph, int count) {
     return out;
 }
 
-void hr(std::ostream& out, const Ansi& ansi, const RenderConfig& cfg) {
-    const int cols = resolve_rule_width(cfg);
-    out << "  " << ansi.dim << repeat_glyph(kRuleGlyph, cols) << ansi.reset << '\n';
-}
-
-void main_menu_rule(std::ostream& out, const Ansi& ansi, const RenderConfig& cfg) {
+void chrome_rule(std::ostream& out, const Ansi& ansi, const RenderConfig& cfg) {
     const int cols = resolve_main_menu_rule_width(cfg);
     out << ansi.dim << repeat_glyph(kRuleGlyph, cols) << ansi.reset << '\n';
-}
-
-void chrome_title(std::ostream& out, const Ansi& ansi, std::string_view title) {
-    out << "  " << ansi.bold << title << ansi.reset << '\n';
 }
 
 // Display order for the Stage groupings on a device-detail screen.
@@ -147,16 +132,6 @@ constexpr const char* stage_heading(profcat::Stage s) noexcept {
         return "APU fabric";
     }
     return "Other";
-}
-
-void rule(std::ostream& out, const Ansi& ansi) {
-    out << ansi.dim << kRule << ansi.reset << '\n';
-}
-
-void header(std::ostream& out, const Ansi& ansi, std::string_view title) {
-    rule(out, ansi);
-    out << ansi.bold << title << ansi.reset << '\n';
-    rule(out, ansi);
 }
 
 bool id_in(std::span<const std::uint32_t> ids, std::uint32_t id) noexcept {
@@ -257,13 +232,6 @@ std::vector<std::size_t> stage_sorted_indices(std::span<const profcat::MetricDes
     return idx;
 }
 
-void render_welcome(std::ostream& out, const RenderConfig& cfg) {
-    const auto ansi = make_ansi(cfg);
-    header(out, ansi, "avail - DEMO");
-    out << "Prototype UX for rocprof-sys-avail. All catalog data is mocked.\n";
-    out << "Press Enter to continue (or type 'quit').\n";
-}
-
 namespace {
 
 std::vector<MenuItem> build_main_menu_items_local() {
@@ -274,15 +242,41 @@ std::vector<MenuItem> build_main_menu_items_local() {
     };
 }
 
+void render_banner_block(std::ostream& out, const Ansi& ansi) {
+    for (const auto line : kBannerLines) {
+        out << ansi.cyan << line << ansi.reset << '\n';
+    }
+}
+
 }  // namespace
 
 void render_banner(std::ostream& out, const RenderConfig& cfg) {
     const auto ansi = make_ansi(cfg);
-    for (const auto line : kBannerLines) {
-        out << ansi.cyan << line << ansi.reset << '\n';
-    }
+    render_banner_block(out, ansi);
     out << '\n';
     out << ansi.dim << kBuildInfo << ansi.reset << '\n';
+}
+
+void render_chrome_open(std::ostream& out, const RenderConfig& cfg, std::string_view title) {
+    const auto ansi = make_ansi(cfg);
+    chrome_rule(out, ansi, cfg);
+    render_banner_block(out, ansi);
+    out << '\n';
+    out << ansi.dim << kBuildInfo << ansi.reset << '\n';
+    chrome_rule(out, ansi, cfg);
+    out << '\n';
+    if (!title.empty()) {
+        out << ansi.bold << title << ansi.reset << '\n';
+        out << '\n';
+    }
+}
+
+void render_chrome_close(std::ostream& out, const RenderConfig& cfg,
+                         std::string_view footer_hints) {
+    const auto ansi = make_ansi(cfg);
+    chrome_rule(out, ansi, cfg);
+    out << ansi.dim << footer_hints << ansi.reset << '\n';
+    chrome_rule(out, ansi, cfg);
 }
 
 void render_main_menu_items(std::ostream& out, const RenderConfig& cfg,
@@ -307,27 +301,20 @@ void render_main_menu_items(std::ostream& out, const RenderConfig& cfg,
 }
 
 void render_main_menu(std::ostream& out, const RenderConfig& cfg) {
-    const auto ansi = make_ansi(cfg);
-    main_menu_rule(out, ansi, cfg);
-    render_banner(out, cfg);
-    main_menu_rule(out, ansi, cfg);
-    out << '\n';
-    out << ansi.bold << "Main Menu" << ansi.reset << '\n';
-    out << '\n';
+    render_chrome_open(out, cfg, "Main Menu");
     const auto items = build_main_menu_items_local();
     render_main_menu_items(out, cfg, items, 0);
     out << '\n';
-    main_menu_rule(out, ansi, cfg);
-    out << ansi.dim << kFooterHintsMainMenu << ansi.reset << '\n';
-    main_menu_rule(out, ansi, cfg);
+    render_chrome_close(out, cfg, kFooterHintsMainMenu);
 }
 
 void render_mode_select(std::ostream& out, const RenderConfig& cfg) {
-    const auto ansi = make_ansi(cfg);
-    header(out, ansi, "Create config - choose catalog mode");
+    render_chrome_open(out, cfg, "Create config - choose catalog mode");
     out << "  1. Online  (this machine, real-ish data)\n";
     out << "  2. Offline (generic device classes, aspirational)\n";
     out << "  3. Back\n";
+    out << '\n';
+    render_chrome_close(out, cfg, kFooterHintsModeSelect);
 }
 
 void render_create_session(std::ostream& out, const RenderConfig& cfg, CatalogMode mode,
@@ -337,7 +324,7 @@ void render_create_session(std::ostream& out, const RenderConfig& cfg, CatalogMo
     title.append(catalog_label);
     title.append("] - ");
     title.append(mode_label(mode));
-    header(out, ansi, title);
+    render_chrome_open(out, cfg, title);
 
     out << "  1. Devices...\n";
     if (!session.is_empty()) {
@@ -348,6 +335,8 @@ void render_create_session(std::ostream& out, const RenderConfig& cfg, CatalogMo
             << ansi.reset << '\n';
     }
     out << "  3. Back\n";
+    out << '\n';
+    render_chrome_close(out, cfg, kFooterHintsCreateSession);
 }
 
 namespace {
@@ -408,39 +397,15 @@ void render_device_row(std::ostream& out, const Ansi& ansi, const Device& dev,
     out << '\n';
 }
 
-}  // namespace
-
-std::vector<std::size_t> kind_sorted_device_indices(const std::vector<Device>& devices) {
-    std::vector<std::size_t> idx(devices.size());
-    std::iota(idx.begin(), idx.end(), std::size_t{0});
-    std::stable_sort(idx.begin(), idx.end(), [&](std::size_t a, std::size_t b) {
-        return kind_rank(devices[a].kind) < kind_rank(devices[b].kind);
-    });
-    return idx;
-}
-
-void render_footer_hints(std::ostream& out, const RenderConfig& cfg, std::string_view hints) {
-    const auto ansi = make_ansi(cfg);
-    hr(out, ansi, cfg);
-    out << "  " << ansi.dim << hints << ansi.reset << '\n';
-}
-
-void render_device_list(std::ostream& out, const RenderConfig& cfg,
-                        const std::vector<Device>& devices, std::size_t selected_index,
-                        bool show_footer_hints) {
-    const auto ansi = make_ansi(cfg);
-    chrome_title(out, ansi, "Devices");
-    hr(out, ansi, cfg);
-    out << '\n';
-
+// Body of the device list (section headers + rows). The chrome open/close are
+// rendered by the caller so this can be reused from interactive mode where the
+// cursor follows the MenuController selection.
+void render_device_list_body(std::ostream& out, const Ansi& ansi,
+                             const std::vector<Device>& devices, std::size_t selected_index) {
     if (devices.empty()) {
         out << "  " << ansi.dim << "(no devices detected)" << ansi.reset << '\n';
-        if (show_footer_hints) {
-            render_footer_hints(out, cfg, kFooterHintsDevices);
-        }
         return;
     }
-
     const auto order = kind_sorted_device_indices(devices);
     const auto widths = compute_device_widths(devices);
 
@@ -459,10 +424,28 @@ void render_device_list(std::ostream& out, const RenderConfig& cfg,
         }
         render_device_row(out, ansi, d, widths, i == selected_index);
     }
-    out << '\n';
+}
 
+}  // namespace
+
+std::vector<std::size_t> kind_sorted_device_indices(const std::vector<Device>& devices) {
+    std::vector<std::size_t> idx(devices.size());
+    std::iota(idx.begin(), idx.end(), std::size_t{0});
+    std::stable_sort(idx.begin(), idx.end(), [&](std::size_t a, std::size_t b) {
+        return kind_rank(devices[a].kind) < kind_rank(devices[b].kind);
+    });
+    return idx;
+}
+
+void render_device_list(std::ostream& out, const RenderConfig& cfg,
+                        const std::vector<Device>& devices, std::size_t selected_index,
+                        bool show_footer_hints) {
+    const auto ansi = make_ansi(cfg);
+    render_chrome_open(out, cfg, "Devices");
+    render_device_list_body(out, ansi, devices, selected_index);
+    out << '\n';
     if (show_footer_hints) {
-        render_footer_hints(out, cfg, kFooterHintsDevices);
+        render_chrome_close(out, cfg, kFooterHintsDevices);
     }
 }
 
@@ -507,24 +490,27 @@ int render_metric_block(std::ostream& out, const Ansi& ansi, int start_index,
     return n;
 }
 
+// Compose the title for a device-detail screen: "<slot> - <identity>".
+std::string device_detail_title(const Device& device) {
+    std::string title = device.slot;
+    title.append(" - ");
+    title.append(device.identity);
+    return title;
+}
+
 }  // namespace
 
 void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Device& device,
                           const SessionState* session_or_null,
                           std::span<const std::uint32_t> supported_ids) {
     const auto ansi = make_ansi(cfg);
-    std::string title = device.slot;
-    title.append(" - ");
-    title.append(device.identity);
-    chrome_title(out, ansi, title);
-    hr(out, ansi, cfg);
-    out << '\n';
+    render_chrome_open(out, cfg, device_detail_title(device));
 
     if (!device.supported) {
         out << "  " << ansi.red << "Unsupported: " << ansi.reset
             << device.unsupported_reason.value_or("no detail") << '\n';
         out << '\n';
-        render_footer_hints(out, cfg, kFooterHintsDetail);
+        render_chrome_close(out, cfg, kFooterHintsDetail);
         return;
     }
 
@@ -536,7 +522,7 @@ void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Devi
     idx = render_metric_block(out, ansi, idx, device.configure, device, session_or_null,
                               supported_ids, true);
     out << '\n';
-    render_footer_hints(out, cfg, kFooterHintsDetail);
+    render_chrome_close(out, cfg, kFooterHintsDetail);
 }
 
 void render_metric_detail(std::ostream& out, const RenderConfig& cfg,
@@ -545,7 +531,7 @@ void render_metric_detail(std::ostream& out, const RenderConfig& cfg,
     const auto ansi = make_ansi(cfg);
     std::string title = "Metric: ";
     title.append(metric.display_name);
-    header(out, ansi, title);
+    render_chrome_open(out, cfg, title);
 
     // Five-field primary block.
     out << "Name:        " << metric.name << '\n';
@@ -567,14 +553,15 @@ void render_metric_detail(std::ostream& out, const RenderConfig& cfg,
     // State badges: supported -> enabled -> aspirational.
     // (Inspector view has no session, so "enabled" is always false here.)
     out << "State:      " << badges_for(ansi, supported, false, aspirational) << '\n';
-    out << "  b. Back\n";
+    out << '\n';
+    render_chrome_close(out, cfg, kFooterHintsMetricDetail);
 }
 
 void render_preset_preview(std::ostream& out, const RenderConfig& cfg, const SessionState& session,
                            const std::vector<Device>& devices) {
     (void) devices;
     const auto ansi = make_ansi(cfg);
-    header(out, ansi, "Preset preview");
+    render_chrome_open(out, cfg, "Preset preview");
     if (session.is_empty()) {
         out << ansi.dim << "# Preset is empty. Select metrics to populate." << ansi.reset << '\n';
     } else {
@@ -584,11 +571,17 @@ void render_preset_preview(std::ostream& out, const RenderConfig& cfg, const Ses
     out << '\n';
     out << "  1. Clear preset\n";
     out << "  2. Back\n";
+    out << '\n';
+    render_chrome_close(out, cfg, kFooterHintsPresetPreview);
 }
 
 void render_confirm(std::ostream& out, const RenderConfig& cfg, std::string_view question) {
     const auto ansi = make_ansi(cfg);
-    out << ansi.yellow << "? " << question << " [y/N]: " << ansi.reset;
+    std::string title = "Confirm";
+    render_chrome_open(out, cfg, title);
+    out << ansi.yellow << "? " << question << " [y/N]" << ansi.reset << '\n';
+    out << '\n';
+    render_chrome_close(out, cfg, kFooterHintsConfirm);
 }
 
 void render_invalid_input(std::ostream& out, const RenderConfig& cfg, std::string_view hint) {
@@ -596,25 +589,19 @@ void render_invalid_input(std::ostream& out, const RenderConfig& cfg, std::strin
     out << ansi.red << "Invalid input. " << ansi.reset << hint << '\n';
 }
 
-void render_welcome_header(std::ostream& out, const RenderConfig& cfg) {
-    const auto ansi = make_ansi(cfg);
-    header(out, ansi, "avail - DEMO");
-    out << "Prototype UX for rocprof-sys-avail. All catalog data is mocked.\n";
-}
+// --- Interactive-mode header renderers ---
+//
+// These print only the chrome OPEN portion (top rule, banner, build-info,
+// top rule, title, blank). The screen body is drawn by the per-iteration
+// redraw loop, and the chrome close is emitted via render_chrome_close
+// with the screen-specific footer hints.
 
 void render_main_menu_header(std::ostream& out, const RenderConfig& cfg) {
-    const auto ansi = make_ansi(cfg);
-    main_menu_rule(out, ansi, cfg);
-    render_banner(out, cfg);
-    main_menu_rule(out, ansi, cfg);
-    out << '\n';
-    out << ansi.bold << "Main Menu" << ansi.reset << '\n';
-    out << '\n';
+    render_chrome_open(out, cfg, "Main Menu");
 }
 
 void render_mode_select_header(std::ostream& out, const RenderConfig& cfg) {
-    const auto ansi = make_ansi(cfg);
-    header(out, ansi, "Create config - choose catalog mode");
+    render_chrome_open(out, cfg, "Create config - choose catalog mode");
 }
 
 void render_create_session_header(std::ostream& out, const RenderConfig& cfg, CatalogMode mode,
@@ -624,19 +611,18 @@ void render_create_session_header(std::ostream& out, const RenderConfig& cfg, Ca
     title.append(catalog_label);
     title.append("] - ");
     title.append(mode_label(mode));
-    header(out, ansi, title);
+    render_chrome_open(out, cfg, title);
     if (!session.is_empty()) {
         out << "Current preset: " << ansi.cyan << session.summary() << ansi.reset << '\n';
+        out << '\n';
     } else {
         out << ansi.dim << "Preset is empty - select metrics first." << ansi.reset << '\n';
+        out << '\n';
     }
 }
 
 void render_device_list_header(std::ostream& out, const RenderConfig& cfg) {
-    const auto ansi = make_ansi(cfg);
-    chrome_title(out, ansi, "Devices");
-    hr(out, ansi, cfg);
-    out << '\n';
+    render_chrome_open(out, cfg, "Devices");
 }
 
 namespace {
@@ -678,12 +664,7 @@ void render_device_detail_header(std::ostream& out, const RenderConfig& cfg, con
                                  const SessionState* session_or_null,
                                  std::span<const std::uint32_t> supported_ids) {
     const auto ansi = make_ansi(cfg);
-    std::string title = device.slot;
-    title.append(" - ");
-    title.append(device.identity);
-    chrome_title(out, ansi, title);
-    hr(out, ansi, cfg);
-    out << '\n';
+    render_chrome_open(out, cfg, device_detail_title(device));
 
     if (!device.supported) {
         out << "  " << ansi.red << "Unsupported: " << ansi.reset
@@ -703,7 +684,7 @@ void render_device_detail_header(std::ostream& out, const RenderConfig& cfg, con
 void render_preset_preview_header(std::ostream& out, const RenderConfig& cfg,
                                   const SessionState& session) {
     const auto ansi = make_ansi(cfg);
-    header(out, ansi, "Preset preview");
+    render_chrome_open(out, cfg, "Preset preview");
     if (session.is_empty()) {
         out << ansi.dim << "# Preset is empty. Select metrics to populate." << ansi.reset << '\n';
     } else {
@@ -711,6 +692,33 @@ void render_preset_preview_header(std::ostream& out, const RenderConfig& cfg,
             << '\n';
     }
     out << '\n';
+}
+
+// Footer-hint helpers exposed for the per-iteration redraw loop in app.cc so
+// every interactive screen closes with the same chrome the demo walker emits.
+std::string_view footer_hints_for_main_menu() noexcept {
+    return kFooterHintsMainMenu;
+}
+std::string_view footer_hints_for_mode_select() noexcept {
+    return kFooterHintsModeSelect;
+}
+std::string_view footer_hints_for_create_session() noexcept {
+    return kFooterHintsCreateSession;
+}
+std::string_view footer_hints_for_devices() noexcept {
+    return kFooterHintsDevices;
+}
+std::string_view footer_hints_for_device_detail() noexcept {
+    return kFooterHintsDetail;
+}
+std::string_view footer_hints_for_metric_detail() noexcept {
+    return kFooterHintsMetricDetail;
+}
+std::string_view footer_hints_for_preset_preview() noexcept {
+    return kFooterHintsPresetPreview;
+}
+std::string_view footer_hints_for_confirm() noexcept {
+    return kFooterHintsConfirm;
 }
 
 std::string strip_ansi(std::string_view input) {

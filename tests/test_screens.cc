@@ -4,11 +4,6 @@
 
 namespace {
 
-TEST(screens_test, welcome_to_main_on_any_input) {
-    EXPECT_EQ(avail::next_screen(avail::Screen::Welcome, ""), avail::Screen::MainMenu);
-    EXPECT_EQ(avail::next_screen(avail::Screen::Welcome, "x"), avail::Screen::MainMenu);
-}
-
 TEST(screens_test, main_menu_1_to_create_mode_select) {
     EXPECT_EQ(avail::next_screen(avail::Screen::MainMenu, "1"), avail::Screen::CreateModeSelect);
 }

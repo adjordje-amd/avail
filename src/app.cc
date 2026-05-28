@@ -188,7 +188,7 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
         return 2;
     }
 
-    Screen current = Screen::Welcome;
+    Screen current = Screen::MainMenu;
     Screen metric_detail_return = Screen::MainMenu;
     CatalogMode mode = CatalogMode::Online;
     SessionState session;
@@ -214,10 +214,6 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
     auto render_header = [&](const std::vector<Device>& devices) {
         out << kClearScreen;
         switch (current) {
-        case Screen::Welcome:
-            render_welcome_header(out, cfg);
-            out << '\n' << "Press Enter to continue (q to quit).\n";
-            break;
         case Screen::MainMenu:
             render_main_menu_header(out, cfg);
             break;
@@ -250,14 +246,20 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             render_preset_preview_header(out, cfg, session);
             out << synthesize_command(session, devices) << '\n' << '\n';
             break;
-        case Screen::ConfirmClearAll:
-            render_confirm(out, cfg, "Clear ALL preset selections?");
+        case Screen::ConfirmClearAll: {
+            const auto ansi = make_ansi(cfg);
+            render_chrome_open(out, cfg, "Confirm");
+            out << ansi.yellow << "? Clear ALL preset selections? [y/N]" << ansi.reset << '\n';
             out << '\n';
             break;
-        case Screen::ConfirmClearDevice:
-            render_confirm(out, cfg, "Clear this device's selections?");
+        }
+        case Screen::ConfirmClearDevice: {
+            const auto ansi = make_ansi(cfg);
+            render_chrome_open(out, cfg, "Confirm");
+            out << ansi.yellow << "? Clear this device's selections? [y/N]" << ansi.reset << '\n';
             out << '\n';
             break;
+        }
         case Screen::MetricDetail:
             if (active_device < devices.size()) {
                 const auto& dev = devices[active_device];
@@ -273,7 +275,6 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                                          id_in_span(supported, md.id));
                 }
             }
-            out << '\n' << "(Press Enter, Esc, q, or b to go back)\n";
             break;
         case Screen::Exit:
             break;
@@ -284,18 +285,6 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
         std::vector<Device> devices = active_catalog().devices();
 
         // Non-menu screens: render once and read a single key.
-        if (current == Screen::Welcome) {
-            render_header(devices);
-            out.flush();
-            const auto ev = read_key();
-            if (ev.key == Key::Enter) {
-                current = Screen::MainMenu;
-            } else if (ev.key == Key::Esc ||
-                       (ev.key == Key::Char && (ev.ch == 'q' || ev.ch == 'Q'))) {
-                current = Screen::Exit;
-            }
-            continue;
-        }
         if (current == Screen::MetricDetail) {
             render_header(devices);
             out.flush();
@@ -356,15 +345,39 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
         while (!committed && !exit_now && !back_now) {
             render_header(devices);
             if (is_device_list_screen) {
+                // render_device_list_screen already emits open+body+close.
                 render_device_list_screen(out, cfg, devices, menu.selected_index());
             } else if (is_main_menu_screen) {
                 render_main_menu_items(out, cfg, menu.items(), menu.selected_index());
                 out << '\n';
-                render_footer_hints(out, cfg,
-                                    "\xe2\x86\x91/\xe2\x86\x93 move   "
-                                    "Enter select   q quit");
+                render_chrome_close(out, cfg, footer_hints_for_main_menu());
             } else {
                 menu.render(out, cfg);
+                out << '\n';
+                std::string_view hints;
+                switch (current) {
+                case Screen::CreateModeSelect:
+                    hints = footer_hints_for_mode_select();
+                    break;
+                case Screen::CreateSession:
+                    hints = footer_hints_for_create_session();
+                    break;
+                case Screen::CreateDeviceDetail:
+                case Screen::InspectDeviceDetail:
+                    hints = footer_hints_for_device_detail();
+                    break;
+                case Screen::PresetPreview:
+                    hints = footer_hints_for_preset_preview();
+                    break;
+                case Screen::ConfirmClearAll:
+                case Screen::ConfirmClearDevice:
+                    hints = footer_hints_for_confirm();
+                    break;
+                default:
+                    hints = footer_hints_for_main_menu();
+                    break;
+                }
+                render_chrome_close(out, cfg, hints);
             }
             out.flush();
 
@@ -563,8 +576,6 @@ int App::run_demo_frames(std::ostream& out, const RenderConfig& cfg) {
 
     const auto sep = [&]() { out << kSeparator << '\n'; };
 
-    render_welcome(out, cfg);
-    sep();
     render_main_menu(out, cfg);
     sep();
     render_mode_select(out, cfg);

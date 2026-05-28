@@ -11,7 +11,6 @@ namespace avail {
  * The state machine in states.md drives transitions between these.
  */
 enum class Screen {
-    Welcome,
     MainMenu,
     CreateModeSelect,
     CreateSession,

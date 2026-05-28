@@ -9,8 +9,6 @@ namespace avail {
 
 std::string screen_name(Screen s) {
     switch (s) {
-    case Screen::Welcome:
-        return "welcome";
     case Screen::MainMenu:
         return "main_menu";
     case Screen::CreateModeSelect:
@@ -52,9 +50,6 @@ bool is_back(std::string_view input) {
 }  // namespace
 
 Screen next_screen(Screen current, std::string_view input) {
-    if (current == Screen::Welcome) {
-        return Screen::MainMenu;
-    }
     if (current == Screen::MainMenu) {
         if (input == "1")
             return Screen::CreateModeSelect;

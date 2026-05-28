@@ -32,8 +32,15 @@ class demo_walker_test : public ::testing::Test {
     std::string m_out;
 };
 
-TEST_F(demo_walker_test, contains_welcome_banner) {
-    EXPECT_NE(m_out.find("DEMO"), std::string::npos);
+TEST_F(demo_walker_test, contains_product_banner) {
+    EXPECT_NE(m_out.find("rocm-sys-avail"), std::string::npos);
+}
+
+TEST_F(demo_walker_test, first_frame_is_main_menu) {
+    EXPECT_NE(m_out.find("Main Menu"), std::string::npos);
+    const auto main_menu_pos = m_out.find("Main Menu");
+    const auto sep_pos = m_out.find("---");
+    EXPECT_LT(main_menu_pos, sep_pos);
 }
 
 TEST_F(demo_walker_test, contains_main_menu_options) {

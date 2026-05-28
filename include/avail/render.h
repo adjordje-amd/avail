@@ -42,7 +42,23 @@ struct Ansi {
 
 [[nodiscard]] Ansi make_ansi(const RenderConfig& cfg);
 
-void render_welcome(std::ostream& out, const RenderConfig& cfg);
+/**
+ * Render the chrome OPEN block: top rule, banner (cyan), build-info (dim),
+ * top rule, blank, title (bold), blank. Used by every screen to keep the
+ * frame layout uniform.
+ *
+ * @p title is the bold heading for the screen; pass empty to skip the title
+ * line entirely (no blank line either).
+ */
+void render_chrome_open(std::ostream& out, const RenderConfig& cfg, std::string_view title);
+
+/**
+ * Render the chrome CLOSE block: bottom rule, footer hints (dim),
+ * bottom rule. Pair with @c render_chrome_open at the end of every
+ * screen body so the chrome wraps the content.
+ */
+void render_chrome_close(std::ostream& out, const RenderConfig& cfg, std::string_view footer_hints);
+
 void render_main_menu(std::ostream& out, const RenderConfig& cfg);
 
 /**
@@ -108,7 +124,6 @@ void render_invalid_input(std::ostream& out, const RenderConfig& cfg, std::strin
 // The legacy `render_*` functions above remain unchanged so the demo
 // walker still emits the original numbered-list layout bit-for-bit.
 
-void render_welcome_header(std::ostream& out, const RenderConfig& cfg);
 void render_main_menu_header(std::ostream& out, const RenderConfig& cfg);
 void render_mode_select_header(std::ostream& out, const RenderConfig& cfg);
 void render_create_session_header(std::ostream& out, const RenderConfig& cfg, CatalogMode mode,
@@ -124,13 +139,24 @@ void render_create_session_header(std::ostream& out, const RenderConfig& cfg, Ca
 void render_device_list_screen(std::ostream& out, const RenderConfig& cfg,
                                const std::vector<Device>& devices, std::size_t selected_index);
 void render_device_list_header(std::ostream& out, const RenderConfig& cfg);
-/** Footer rule + key-hint line shared by every chrome-style screen. */
-void render_footer_hints(std::ostream& out, const RenderConfig& cfg, std::string_view hints);
 void render_device_detail_header(std::ostream& out, const RenderConfig& cfg, const Device& device,
                                  const SessionState* session_or_null,
                                  std::span<const std::uint32_t> supported_ids);
 void render_preset_preview_header(std::ostream& out, const RenderConfig& cfg,
                                   const SessionState& session);
+
+// --- Footer-hint accessors ---
+//
+// Exposed for the per-iteration redraw loop in app.cc so every interactive
+// screen closes with the same chrome the demo walker emits.
+[[nodiscard]] std::string_view footer_hints_for_main_menu() noexcept;
+[[nodiscard]] std::string_view footer_hints_for_mode_select() noexcept;
+[[nodiscard]] std::string_view footer_hints_for_create_session() noexcept;
+[[nodiscard]] std::string_view footer_hints_for_devices() noexcept;
+[[nodiscard]] std::string_view footer_hints_for_device_detail() noexcept;
+[[nodiscard]] std::string_view footer_hints_for_metric_detail() noexcept;
+[[nodiscard]] std::string_view footer_hints_for_preset_preview() noexcept;
+[[nodiscard]] std::string_view footer_hints_for_confirm() noexcept;
 
 /** Strip ANSI CSI sequences from input. Used by --no-color regression test. */
 [[nodiscard]] std::string strip_ansi(std::string_view input);

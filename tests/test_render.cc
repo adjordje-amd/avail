@@ -31,12 +31,6 @@ const profcat::MetricDescriptor& lookup_or_die(std::uint32_t id) {
     std::abort();
 }
 
-TEST(render_test, welcome_includes_demo_label) {
-    std::ostringstream os;
-    avail::render_welcome(os, color_off());
-    EXPECT_NE(os.str().find("DEMO"), std::string::npos);
-}
-
 TEST(render_test, main_menu_includes_all_three_options) {
     std::ostringstream os;
     avail::render_main_menu(os, color_off());
@@ -110,6 +104,93 @@ TEST(render_test, mode_select_lists_online_offline_back) {
     EXPECT_NE(out.find("Online"), std::string::npos);
     EXPECT_NE(out.find("Offline"), std::string::npos);
     EXPECT_NE(out.find("Back"), std::string::npos);
+}
+
+// --- Uniform chrome wrapper (banner + build-info + title + footer hints) ---
+//
+// Every user-visible screen must paint the same chrome (banner, build-info,
+// title, footer hints). These tests pin the contract per screen so a future
+// refactor cannot regress to per-screen-only chrome.
+
+TEST(render_test, chrome_open_emits_title_and_banner) {
+    std::ostringstream os;
+    avail::render_chrome_open(os, color_off(), "My Screen");
+    const auto out = os.str();
+    EXPECT_NE(out.find("rocm-sys-avail v1.6.0"), std::string::npos);
+    EXPECT_NE(out.find("My Screen"), std::string::npos);
+}
+
+TEST(render_test, chrome_close_emits_footer_hints) {
+    std::ostringstream os;
+    avail::render_chrome_close(os, color_off(), "q quit");
+    EXPECT_NE(os.str().find("q quit"), std::string::npos);
+}
+
+TEST(render_test, mode_select_wraps_in_chrome) {
+    std::ostringstream os;
+    avail::render_mode_select(os, color_off());
+    const auto out = os.str();
+    EXPECT_NE(out.find("rocm-sys-avail v1.6.0"), std::string::npos);
+    EXPECT_NE(out.find("choose catalog mode"), std::string::npos);
+    EXPECT_NE(out.find("Enter select"), std::string::npos);
+    EXPECT_NE(out.find("q back"), std::string::npos);
+}
+
+TEST(render_test, create_session_wraps_in_chrome) {
+    avail::SessionState s;
+    std::ostringstream os;
+    avail::render_create_session(os, color_off(), avail::CatalogMode::Online, "this machine", s);
+    const auto out = os.str();
+    EXPECT_NE(out.find("rocm-sys-avail v1.6.0"), std::string::npos);
+    EXPECT_NE(out.find("Create config session"), std::string::npos);
+    EXPECT_NE(out.find("q back"), std::string::npos);
+}
+
+TEST(render_test, device_detail_wraps_in_chrome) {
+    const auto& sq_waves = lookup_or_die(0x2001);
+    avail::Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "Radeon";
+    d.supported = true;
+    d.measure = {sq_waves};
+    std::uint32_t supported_arr[] = {sq_waves.id};
+    std::ostringstream os;
+    avail::render_device_detail(os, color_off(), d, nullptr, supported_arr);
+    const auto out = os.str();
+    EXPECT_NE(out.find("rocm-sys-avail v1.6.0"), std::string::npos);
+    EXPECT_NE(out.find("gpu0 - "), std::string::npos);
+    EXPECT_NE(out.find("Enter toggle"), std::string::npos);
+}
+
+TEST(render_test, metric_detail_wraps_in_chrome) {
+    const auto& m = lookup_or_die(0x2001);
+    std::ostringstream os;
+    avail::render_metric_detail(os, color_off(), m, false, true);
+    const auto out = os.str();
+    EXPECT_NE(out.find("rocm-sys-avail v1.6.0"), std::string::npos);
+    EXPECT_NE(out.find("Metric: "), std::string::npos);
+    EXPECT_NE(out.find("q back"), std::string::npos);
+}
+
+TEST(render_test, preset_preview_wraps_in_chrome) {
+    avail::SessionState s;
+    std::vector<avail::Device> devs;
+    std::ostringstream os;
+    avail::render_preset_preview(os, color_off(), s, devs);
+    const auto out = os.str();
+    EXPECT_NE(out.find("rocm-sys-avail v1.6.0"), std::string::npos);
+    EXPECT_NE(out.find("Preset preview"), std::string::npos);
+    EXPECT_NE(out.find("q back"), std::string::npos);
+}
+
+TEST(render_test, confirm_wraps_in_chrome) {
+    std::ostringstream os;
+    avail::render_confirm(os, color_off(), "Clear ALL?");
+    const auto out = os.str();
+    EXPECT_NE(out.find("rocm-sys-avail v1.6.0"), std::string::npos);
+    EXPECT_NE(out.find("Confirm"), std::string::npos);
+    EXPECT_NE(out.find("y yes"), std::string::npos);
 }
 
 TEST(render_test, color_off_emits_no_escape_sequences) {
