@@ -99,15 +99,16 @@ std::vector<MenuItem> build_device_list_menu(const std::vector<Device>& devices)
 // visible row chrome (cursor, checkbox, stage heading, badges). The menu
 // is here purely for id-based dispatch and selection bookkeeping.
 //
-// @p show_clear toggles the "Clear this device's selections" housekeeping
-// row (true in Create mode, false in Inspect).
-std::vector<MenuItem> build_device_detail_menu(const Device& device, bool show_clear) {
+// Item count depends ONLY on the device (measure + configure size), never on
+// session state. This invariant lets the outer loop preserve the cursor
+// across rebuilds after Enter-toggle by feeding the prior selection back as
+// MenuController's initial index.
+std::vector<MenuItem> build_device_detail_menu(const Device& device) {
     std::vector<MenuItem> items;
     if (!device.supported) {
-        items.emplace_back("Back", kIdBack);
         return items;
     }
-    items.reserve(device.measure.size() + device.configure.size() + 2);
+    items.reserve(device.measure.size() + device.configure.size());
     const auto measure_order = stage_sorted_indices(device.measure);
     for (std::size_t pos : measure_order) {
         items.emplace_back(std::string(device.measure[pos].name), "m:" + std::to_string(pos));
@@ -116,10 +117,6 @@ std::vector<MenuItem> build_device_detail_menu(const Device& device, bool show_c
     for (std::size_t pos : configure_order) {
         items.emplace_back(std::string(device.configure[pos].name), "c:" + std::to_string(pos));
     }
-    if (show_clear) {
-        items.emplace_back(std::string("Clear this device's selections"), std::string(kIdClear));
-    }
-    items.emplace_back(std::string("Back"), std::string(kIdBack));
     return items;
 }
 
@@ -184,6 +181,10 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
     std::size_t active_device = 0;
     std::size_t active_metric = 0;
     std::size_t detail_page_index = 0;
+    // Persistent cursor for Device Detail. The menu is rebuilt on every
+    // outer-loop iteration, so without this the cursor would reset to row 0
+    // after every Enter-toggle.
+    std::size_t device_detail_selected = 0;
 
     auto active_catalog = [&]() -> IDeviceCatalog& {
         if (current == Screen::InspectDeviceList || current == Screen::InspectDeviceDetail) {
@@ -292,13 +293,9 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             items = build_device_list_menu(devices);
             break;
         case Screen::CreateDeviceDetail:
-            if (active_device < devices.size()) {
-                items = build_device_detail_menu(devices[active_device], /*show_clear=*/true);
-            }
-            break;
         case Screen::InspectDeviceDetail:
             if (active_device < devices.size()) {
-                items = build_device_detail_menu(devices[active_device], /*show_clear=*/false);
+                items = build_device_detail_menu(devices[active_device]);
             }
             break;
         case Screen::PresetPreview:
@@ -312,7 +309,13 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             break;
         }
 
-        MenuController menu(std::move(items));
+        const bool is_device_detail_for_init =
+            current == Screen::CreateDeviceDetail || current == Screen::InspectDeviceDetail;
+        const std::size_t initial_index =
+            (is_device_detail_for_init && device_detail_selected < items.size())
+                ? device_detail_selected
+                : 0;
+        MenuController menu(std::move(items), initial_index);
         bool committed = false;
         bool exit_now = false;
         bool back_now = false;
@@ -326,8 +329,7 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             current == Screen::CreateSession || current == Screen::PresetPreview;
 
         // Device Detail uses manual flat pagination: render owns the page
-        // window, menu indexes into the flat [metrics ++ housekeeping] list.
-        // Clamp detail_page_index to a valid page given the current device.
+        // window, menu indexes into the flat metric list.
         std::size_t metric_count = 0;
         std::size_t total_pages = 1;
         if (is_device_detail_screen && active_device < devices.size()) {
@@ -337,25 +339,24 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             if (detail_page_index >= total_pages) {
                 detail_page_index = total_pages - 1;
             }
-            // Snap selection into the visible page (housekeeping rows are
-            // always visible so a sel >= metric_count stays put).
             const std::size_t page_begin = detail_page_index * kDeviceDetailPageSize;
             const std::size_t page_end = std::min(metric_count, page_begin + kDeviceDetailPageSize);
             const std::size_t sel = menu.selected_index();
-            if (sel < metric_count) {
-                std::size_t target = sel;
-                if (sel < page_begin) {
-                    target = page_begin;
-                } else if (sel >= page_end) {
-                    target = page_end == 0 ? page_begin : page_end - 1;
-                }
-                while (menu.selected_index() < target) {
-                    menu.move_down();
-                }
-                while (menu.selected_index() > target) {
-                    menu.move_up();
-                }
+            std::size_t target = sel;
+            if (metric_count == 0) {
+                target = 0;
+            } else if (sel < page_begin) {
+                target = page_begin;
+            } else if (sel >= page_end) {
+                target = page_end == 0 ? page_begin : page_end - 1;
             }
+            while (menu.selected_index() < target) {
+                menu.move_down();
+            }
+            while (menu.selected_index() > target) {
+                menu.move_up();
+            }
+            device_detail_selected = menu.selected_index();
         }
 
         while (!committed && !exit_now && !back_now) {
@@ -366,10 +367,9 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             } else if (is_device_detail_screen && active_device < devices.size()) {
                 const auto& dev = devices[active_device];
                 const auto supported = active_metric_catalog().supported_ids(dev.slot);
-                const bool show_clear = (current == Screen::CreateDeviceDetail);
                 render_device_detail_screen(out, cfg, dev, &session, supported,
                                             PaginatedDetail{detail_page_index},
-                                            menu.selected_index(), show_clear);
+                                            menu.selected_index());
             } else if (uses_shared_menu_items) {
                 render_menu_items(out, cfg, menu.items(), menu.selected_index());
                 out << '\n';
@@ -409,15 +409,14 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             const auto ev = read_key();
             if (ev.key == Key::Up) {
                 if (is_device_detail_screen) {
-                    // Flat up/down across [metrics ++ housekeeping]; when
-                    // crossing into the previous metric page, flip the page.
+                    // Flat up/down across metric rows; flip the page when
+                    // crossing a page boundary.
                     const std::size_t sel = menu.selected_index();
                     if (sel > 0) {
                         menu.move_up();
                         const std::size_t new_sel = menu.selected_index();
-                        if (new_sel < metric_count) {
-                            detail_page_index = new_sel / kDeviceDetailPageSize;
-                        }
+                        detail_page_index = new_sel / kDeviceDetailPageSize;
+                        device_detail_selected = new_sel;
                     }
                 } else {
                     menu.move_up();
@@ -430,9 +429,8 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                     if (sel + 1 < menu.items().size()) {
                         menu.move_down();
                         const std::size_t new_sel = menu.selected_index();
-                        if (new_sel < metric_count) {
-                            detail_page_index = new_sel / kDeviceDetailPageSize;
-                        }
+                        detail_page_index = new_sel / kDeviceDetailPageSize;
+                        device_detail_selected = new_sel;
                     }
                 } else {
                     menu.move_down();
@@ -445,18 +443,15 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                 } else if (ev.key == Key::Right && detail_page_index + 1 < total_pages) {
                     ++detail_page_index;
                 }
-                // Snap selection onto the first row of the new page when it
-                // was previously on a metric row in a different page.
-                const std::size_t sel = menu.selected_index();
-                if (sel < metric_count) {
-                    const std::size_t page_begin = detail_page_index * kDeviceDetailPageSize;
-                    while (menu.selected_index() < page_begin) {
-                        menu.move_down();
-                    }
-                    while (menu.selected_index() > page_begin) {
-                        menu.move_up();
-                    }
+                // Snap selection to the first row of the new page.
+                const std::size_t page_begin = detail_page_index * kDeviceDetailPageSize;
+                while (menu.selected_index() < page_begin) {
+                    menu.move_down();
                 }
+                while (menu.selected_index() > page_begin) {
+                    menu.move_up();
+                }
+                device_detail_selected = menu.selected_index();
                 continue;
             }
             if (ev.key == Key::Char && (ev.ch == 'i' || ev.ch == 'I') && is_device_detail_screen &&
@@ -492,7 +487,7 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                 ev.key == Key::Esc || (ev.key == Key::Char && (ev.ch == 'q' || ev.ch == 'Q'));
             const bool back_char = ev.key == Key::Char && ev.ch == 'b';
             if (esc_or_q || back_char) {
-                if (is_device_list_screen) {
+                if (is_device_list_screen || is_device_detail_screen) {
                     back_now = true;
                 } else if (menu_has_id(menu, kIdBack)) {
                     select_by_id(menu, kIdBack);
@@ -523,10 +518,22 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             continue;
         }
         if (back_now) {
-            // Footer-driven back affordance for device-list screens; the
-            // MenuController has no Back item there.
-            current =
-                (current == Screen::CreateDeviceList) ? Screen::CreateSession : Screen::MainMenu;
+            // Footer-driven back affordance for screens without a Back menu
+            // item (device list, device detail).
+            switch (current) {
+            case Screen::CreateDeviceList:
+                current = Screen::CreateSession;
+                break;
+            case Screen::CreateDeviceDetail:
+                current = Screen::CreateDeviceList;
+                break;
+            case Screen::InspectDeviceDetail:
+                current = Screen::InspectDeviceList;
+                break;
+            default:
+                current = Screen::MainMenu;
+                break;
+            }
             continue;
         }
 
@@ -579,6 +586,7 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
                 if (devices[i].slot == id) {
                     active_device = i;
                     detail_page_index = 0;
+                    device_detail_selected = 0;
                     const bool entering_create = (current == Screen::CreateDeviceList);
                     current =
                         entering_create ? Screen::CreateDeviceDetail : Screen::InspectDeviceDetail;
@@ -599,34 +607,10 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
             }
             continue;
         }
-        if (current == Screen::CreateDeviceDetail) {
-            if (id == kIdBack) {
-                current = Screen::CreateDeviceList;
-                continue;
-            }
-            if (id == kIdClear) {
-                current = Screen::ConfirmClearDevice;
-                continue;
-            }
-            if (active_device < devices.size() && id.size() > 2 && id[1] == ':') {
-                const auto& dev = devices[active_device];
-                const std::size_t k = std::stoull(id.substr(2));
-                if (id[0] == 'm' && k < dev.measure.size()) {
-                    session.toggle_metric(dev.slot, dev.measure[k].name);
-                } else if (id[0] == 'c' && k < dev.configure.size()) {
-                    session.toggle_configure(dev.slot, dev.configure[k].name);
-                }
-            }
-            continue;
-        }
-        if (current == Screen::InspectDeviceDetail) {
-            if (id == kIdBack) {
-                current = Screen::InspectDeviceList;
-                continue;
-            }
-            // Enter toggles the metric in the transient inspect-mode session
-            // (never applied as a preset; Q16 inspect-only boundary). Use 'i'
-            // to open the metric detail view.
+        if (current == Screen::CreateDeviceDetail || current == Screen::InspectDeviceDetail) {
+            // Enter toggles the selected metric. Inspect mode uses a
+            // transient session (toggles never apply as a preset). Use 'i'
+            // to open the metric detail view, q/b/Esc to go back.
             if (active_device < devices.size() && id.size() > 2 && id[1] == ':') {
                 const auto& dev = devices[active_device];
                 const std::size_t k = std::stoull(id.substr(2));

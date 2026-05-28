@@ -141,21 +141,17 @@ void render_device_detail(std::ostream& out, const RenderConfig& cfg, const Devi
 
 /**
  * Render the full Device Detail screen for interactive mode: chrome open,
- * paginated metric block (no Measure / Configure labels), fixed housekeeping
- * block (Clear / Back) below the metric body, chrome close.
+ * paginated metric block (no Measure / Configure labels), chrome close.
  *
- * @p selected_index is a flat index into [metrics] ++ [housekeeping]. Rows
- * with @c i == selected_index are prefixed with @c "> ". When the selected
- * row falls outside the visible metric page, no metric row carries the
- * cursor (e.g. housekeeping selection on page 1 of 3).
- *
- * @p show_clear toggles the "Clear this device's selections" housekeeping
- * row. Pass true for Create mode, false for Inspect (no Clear).
+ * @p selected_index is the flat metric-row index across the combined
+ * Measure + Configure list. Rows with @c i == selected_index are prefixed
+ * with @c "> ". Selection outside the visible page renders no cursor in
+ * the metric body.
  */
 void render_device_detail_screen(std::ostream& out, const RenderConfig& cfg, const Device& device,
                                  const SessionState* session,
                                  std::span<const std::uint32_t> supported_ids, PaginatedDetail page,
-                                 std::size_t selected_index, bool show_clear);
+                                 std::size_t selected_index);
 void render_metric_detail(std::ostream& out, const RenderConfig& cfg,
                           const profcat::MetricDescriptor& metric, bool aspirational,
                           bool supported);

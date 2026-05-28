@@ -705,31 +705,10 @@ void render_device_list_header(std::ostream& out, const RenderConfig& cfg) {
     render_chrome_open(out, cfg, "Devices");
 }
 
-namespace {
-
-// Housekeeping row labels rendered below the metric body in interactive
-// Device Detail. Order is Clear (Create-mode only) then Back.
-constexpr std::string_view kClearLabel = "Clear this device's selections";
-constexpr std::string_view kBackLabel = "Back";
-
-void render_housekeeping_block(std::ostream& out, std::size_t metric_count,
-                               std::size_t selected_index, bool show_clear) {
-    std::size_t row = metric_count;
-    if (show_clear) {
-        const std::string_view cursor = (row == selected_index) ? "> " : "  ";
-        out << cursor << kClearLabel << '\n';
-        ++row;
-    }
-    const std::string_view back_cursor = (row == selected_index) ? "> " : "  ";
-    out << back_cursor << kBackLabel << '\n';
-}
-
-}  // namespace
-
 void render_device_detail_screen(std::ostream& out, const RenderConfig& cfg, const Device& device,
                                  const SessionState* session,
                                  std::span<const std::uint32_t> supported_ids, PaginatedDetail page,
-                                 std::size_t selected_index, bool show_clear) {
+                                 std::size_t selected_index) {
     const auto ansi = make_ansi(cfg);
     render_chrome_open(out, cfg, "");
 
@@ -737,8 +716,6 @@ void render_device_detail_screen(std::ostream& out, const RenderConfig& cfg, con
         render_detail_title_with_page(out, ansi, device, PageWindow{});
         out << "  " << ansi.red << "Unsupported: " << ansi.reset
             << device.unsupported_reason.value_or("no detail") << '\n';
-        out << '\n';
-        render_housekeeping_block(out, /*metric_count=*/0, selected_index, /*show_clear=*/false);
         out << '\n';
         render_chrome_close(out, cfg, kFooterHintsDetail);
         return;
@@ -749,8 +726,6 @@ void render_device_detail_screen(std::ostream& out, const RenderConfig& cfg, con
     render_detail_title_with_page(out, ansi, device, win);
     render_paginated_metric_block(out, ansi, rows, win, device, session, supported_ids,
                                   selected_index);
-    out << '\n';
-    render_housekeeping_block(out, rows.size(), selected_index, show_clear);
     out << '\n';
     render_chrome_close(out, cfg, kFooterHintsDetail);
 }

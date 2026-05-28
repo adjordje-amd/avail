@@ -318,7 +318,7 @@ TEST(render_test, device_detail_footer_hints_include_i_info) {
     EXPECT_NE(os.str().find("i info"), std::string::npos);
 }
 
-TEST(render_test, device_detail_screen_renders_housekeeping_block) {
+TEST(render_test, device_detail_screen_has_no_housekeeping_rows) {
     const auto& sq_waves = lookup_or_die(0x2001);
     avail::Device d;
     d.slot = "gpu0";
@@ -330,30 +330,13 @@ TEST(render_test, device_detail_screen_renders_housekeeping_block) {
     avail::SessionState s;
     std::ostringstream os;
     avail::render_device_detail_screen(os, color_off(), d, &s, supported_arr,
-                                       avail::PaginatedDetail{}, /*selected_index=*/0,
-                                       /*show_clear=*/true);
-    const auto out = os.str();
-    EXPECT_NE(out.find("Clear this device's selections"), std::string::npos);
-    EXPECT_NE(out.find("Back"), std::string::npos);
-}
-
-TEST(render_test, device_detail_screen_no_clear_when_show_clear_false) {
-    const auto& sq_waves = lookup_or_die(0x2001);
-    avail::Device d;
-    d.slot = "gpu0";
-    d.kind = "GPU";
-    d.identity = "test";
-    d.supported = true;
-    d.measure = {sq_waves};
-    std::uint32_t supported_arr[] = {sq_waves.id};
-    avail::SessionState s;
-    std::ostringstream os;
-    avail::render_device_detail_screen(os, color_off(), d, &s, supported_arr,
-                                       avail::PaginatedDetail{}, /*selected_index=*/0,
-                                       /*show_clear=*/false);
+                                       avail::PaginatedDetail{}, /*selected_index=*/0);
     const auto out = os.str();
     EXPECT_EQ(out.find("Clear this device's selections"), std::string::npos);
-    EXPECT_NE(out.find("Back"), std::string::npos);
+    // "Back" must not appear as a body row. The footer hint line still
+    // contains "q back" so check for the row form "  Back\n" / "> Back\n".
+    EXPECT_EQ(out.find("  Back\n"), std::string::npos);
+    EXPECT_EQ(out.find("> Back\n"), std::string::npos);
 }
 
 TEST(render_test, device_detail_screen_cursor_on_selected_row_only) {
@@ -369,8 +352,7 @@ TEST(render_test, device_detail_screen_cursor_on_selected_row_only) {
     avail::SessionState s;
     std::ostringstream os;
     avail::render_device_detail_screen(os, color_off(), d, &s, supported_arr,
-                                       avail::PaginatedDetail{}, /*selected_index=*/1,
-                                       /*show_clear=*/true);
+                                       avail::PaginatedDetail{}, /*selected_index=*/1);
     const auto out = os.str();
     // Exactly one "> " cursor in the screen body.
     std::size_t count = 0;
@@ -380,6 +362,65 @@ TEST(render_test, device_detail_screen_cursor_on_selected_row_only) {
         pos += 2;
     }
     EXPECT_EQ(count, 1u);
+}
+
+// Cursor-preservation regression: toggling the metric must not move the
+// cursor away from the toggled row. The interactive loop rebuilds the menu
+// every iteration, so this exercises the render-side invariant that the
+// caller-supplied selected_index is what gets the "> " cursor regardless
+// of which checkboxes the session marks as enabled.
+TEST(render_test, device_detail_screen_cursor_stable_across_toggle) {
+    const auto& sq_waves = lookup_or_die(0x2001);    // sorts after insts_valu
+    const auto& insts_valu = lookup_or_die(0x2002);  // sorts before sq_waves
+    avail::Device d;
+    d.slot = "gpu0";
+    d.kind = "GPU";
+    d.identity = "test";
+    d.supported = true;
+    d.measure = {sq_waves, insts_valu};
+    std::uint32_t supported_arr[] = {sq_waves.id, insts_valu.id};
+    avail::SessionState s;
+    // Visible row 1 corresponds to sq_waves after stage_sorted_indices puts
+    // insts_valu (alphabetically first within Stage::Gpu) at row 0.
+    const std::size_t kRow = 1;
+
+    std::ostringstream before;
+    avail::render_device_detail_screen(before, color_off(), d, &s, supported_arr,
+                                       avail::PaginatedDetail{}, kRow);
+    // Toggle sq_waves (the metric at visible row 1 = cursor row).
+    s.toggle_metric(d.slot, sq_waves.name);
+    std::ostringstream after;
+    avail::render_device_detail_screen(after, color_off(), d, &s, supported_arr,
+                                       avail::PaginatedDetail{}, kRow);
+
+    // The cursor row is the only line that starts with "> ". The line must
+    // still be on row 2 (the toggled metric) after the toggle.
+    const auto find_cursor_line = [](const std::string& frame) {
+        std::size_t start = 0;
+        while (start < frame.size()) {
+            const std::size_t eol = frame.find('\n', start);
+            const std::string line = frame.substr(start, eol - start);
+            if (line.rfind("> ", 0) == 0) {
+                return line;
+            }
+            if (eol == std::string::npos) {
+                break;
+            }
+            start = eol + 1;
+        }
+        return std::string{};
+    };
+    const std::string cursor_before = find_cursor_line(before.str());
+    const std::string cursor_after = find_cursor_line(after.str());
+    EXPECT_FALSE(cursor_before.empty());
+    EXPECT_FALSE(cursor_after.empty());
+    // Same row index visible in both frames: line begins with "> 2." after
+    // the cursor glyph (the renderer 1-bases the row number).
+    EXPECT_NE(cursor_before.find("2."), std::string::npos);
+    EXPECT_NE(cursor_after.find("2."), std::string::npos);
+    // Checkbox state must have flipped from [ ] to [x].
+    EXPECT_NE(cursor_before.find("[ ]"), std::string::npos);
+    EXPECT_NE(cursor_after.find("[x]"), std::string::npos);
 }
 
 TEST(render_test, device_detail_renders_stage_heading) {
