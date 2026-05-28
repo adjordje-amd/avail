@@ -29,6 +29,8 @@ add_library(avail_core STATIC
     src/session.cc
     src/synthesize.cc
     src/app.cc
+    src/input.cc
+    src/menu.cc
     src/mocks_online.cc
     src/mocks_offline.cc
     src/version.cc

@@ -1,12 +1,12 @@
 #include "CLI11.hpp"
 #include "avail/app.h"
+#include "avail/input.h"
 #include "avail/mocks_offline.h"
 #include "avail/mocks_online.h"
 #include "avail/render.h"
 #include "avail/version.h"
 
 #include <iostream>
-#include <unistd.h>
 
 int main(int argc, char** argv) {
     CLI::App app{"avail - prototype rocprof-sys-avail UX (skeleton)"};
@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
     CLI11_PARSE(app, argc, argv);
 
     avail::RenderConfig cfg;
-    cfg.color = !no_color && (isatty(STDOUT_FILENO) != 0);
+    cfg.color = !no_color && avail::stdout_is_tty();
     if (demo_frames) {
         cfg.color = !no_color;  // demo mode keeps color when explicitly enabled
     }
@@ -36,6 +36,11 @@ int main(int argc, char** argv) {
 
     if (demo_frames) {
         return driver.run_demo_frames(std::cout, cfg);
+    }
+    if (!avail::stdin_is_tty() || !avail::stdout_is_tty()) {
+        std::cerr
+            << "avail interactive requires a TTY; use --demo-frames for non-interactive walk\n";
+        return 2;
     }
     return driver.run_interactive(std::cin, std::cout, cfg);
 }

@@ -204,6 +204,102 @@ void render_invalid_input(std::ostream& out, const RenderConfig& cfg, std::strin
     out << ansi.red << "Invalid input. " << ansi.reset << hint << '\n';
 }
 
+void render_welcome_header(std::ostream& out, const RenderConfig& cfg) {
+    const auto ansi = make_ansi(cfg);
+    header(out, ansi, "avail - DEMO");
+    out << "Prototype UX for rocprof-sys-avail. All catalog data is mocked.\n";
+}
+
+void render_main_menu_header(std::ostream& out, const RenderConfig& cfg) {
+    const auto ansi = make_ansi(cfg);
+    header(out, ansi, "Main menu");
+}
+
+void render_mode_select_header(std::ostream& out, const RenderConfig& cfg) {
+    const auto ansi = make_ansi(cfg);
+    header(out, ansi, "Create config - choose catalog mode");
+}
+
+void render_create_session_header(std::ostream& out, const RenderConfig& cfg, CatalogMode mode,
+                                  std::string_view catalog_label, const SessionState& session) {
+    const auto ansi = make_ansi(cfg);
+    std::string title = "Create config session [";
+    title.append(catalog_label);
+    title.append("] - ");
+    title.append(mode_label(mode));
+    header(out, ansi, title);
+    if (!session.is_empty()) {
+        out << "Current preset: " << ansi.cyan << session.summary() << ansi.reset << '\n';
+    } else {
+        out << ansi.dim << "Preset is empty - select metrics first." << ansi.reset << '\n';
+    }
+}
+
+void render_device_list_header(std::ostream& out, const RenderConfig& cfg) {
+    const auto ansi = make_ansi(cfg);
+    header(out, ansi, "Devices");
+}
+
+void render_device_detail_header(std::ostream& out, const RenderConfig& cfg, const Device& device,
+                                 const SessionState* session_or_null) {
+    const auto ansi = make_ansi(cfg);
+    std::string title = device.slot;
+    title.append(" - ");
+    title.append(device.identity);
+    header(out, ansi, title);
+
+    if (!device.supported) {
+        out << ansi.red << "Unsupported: " << ansi.reset
+            << device.unsupported_reason.value_or("no detail") << '\n';
+        return;
+    }
+
+    out << ansi.bold << "Measure:" << ansi.reset << '\n';
+    for (const auto& m : device.measure) {
+        const char* box = "[ ]";
+        if (session_or_null != nullptr && session_or_null->has_metric(device.slot, m.name)) {
+            box = "[x]";
+        }
+        out << "  " << (session_or_null ? box : "  ") << ' ' << m.name;
+        if (m.unit) {
+            out << " (" << *m.unit << ')';
+        }
+        if (m.aspirational) {
+            out << ansi.yellow << ansi.dim << kBadge << ansi.reset;
+        }
+        out << '\n';
+    }
+    out << ansi.bold << "Configure:" << ansi.reset << '\n';
+    for (const auto& m : device.configure) {
+        const char* box = "[ ]";
+        if (session_or_null != nullptr && session_or_null->has_configure(device.slot, m.name)) {
+            box = "[x]";
+        }
+        out << "  " << (session_or_null ? box : "  ") << ' ' << m.name;
+        if (m.unit) {
+            out << " (" << *m.unit << ')';
+        }
+        if (m.aspirational) {
+            out << ansi.yellow << ansi.dim << kBadge << ansi.reset;
+        }
+        out << '\n';
+    }
+    out << '\n';
+}
+
+void render_preset_preview_header(std::ostream& out, const RenderConfig& cfg,
+                                  const SessionState& session) {
+    const auto ansi = make_ansi(cfg);
+    header(out, ansi, "Preset preview");
+    if (session.is_empty()) {
+        out << ansi.dim << "# Preset is empty. Select metrics to populate." << ansi.reset << '\n';
+    } else {
+        out << ansi.green << "# Preset built via avail demo - " << session.summary() << ansi.reset
+            << '\n';
+    }
+    out << '\n';
+}
+
 std::string strip_ansi(std::string_view input) {
     std::string out_buf;
     out_buf.reserve(input.size());

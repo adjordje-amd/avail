@@ -5,6 +5,8 @@ add_executable(avail_tests
     test_screens.cc
     test_mocks.cc
     test_demo_walker.cc
+    test_menu.cc
+    test_input.cc
 )
 
 target_link_libraries(avail_tests PRIVATE

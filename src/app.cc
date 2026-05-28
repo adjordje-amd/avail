@@ -1,16 +1,16 @@
 #include "avail/app.h"
 
+#include "avail/input.h"
+#include "avail/menu.h"
 #include "avail/render.h"
 #include "avail/screens.h"
 #include "avail/session.h"
 #include "avail/synthesize.h"
 
-#include <algorithm>
-#include <cctype>
+#include <cstddef>
 #include <istream>
 #include <ostream>
 #include <string>
-#include <string_view>
 #include <vector>
 
 namespace avail {
@@ -19,99 +19,128 @@ namespace {
 
 constexpr const char* kSeparator = "---";
 
-std::string lower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return s;
+// id tokens used by MenuItem.id; opaque to render code.
+constexpr const char* kIdBack = "back";
+constexpr const char* kIdYes = "yes";
+constexpr const char* kIdNo = "no";
+constexpr const char* kIdClear = "clear";
+constexpr const char* kIdPreview = "preview";
+constexpr const char* kIdDevices = "devices";
+constexpr const char* kIdExit = "exit";
+constexpr const char* kIdCreate = "create";
+constexpr const char* kIdInspect = "inspect";
+constexpr const char* kIdOnline = "online";
+constexpr const char* kIdOffline = "offline";
+
+std::vector<MenuItem> build_main_menu() {
+    return {
+        {"Create profiling configuration", kIdCreate},
+        {"Inspect what is available", kIdInspect},
+        {"Exit", kIdExit},
+    };
 }
 
-std::string trim(std::string s) {
-    const auto issp = [](unsigned char c) { return std::isspace(c) != 0; };
-    const auto first = std::find_if_not(s.begin(), s.end(), issp);
-    s.erase(s.begin(), first);
-    const auto last = std::find_if_not(s.rbegin(), s.rend(), issp).base();
-    s.erase(last, s.end());
-    return s;
+std::vector<MenuItem> build_mode_select_menu() {
+    return {
+        {"Online  (this machine, real-ish data)", kIdOnline},
+        {"Offline (generic device classes, aspirational)", kIdOffline},
+        {"Back", kIdBack},
+    };
 }
 
-bool parse_index(std::string_view token, int& out_idx) {
-    if (token.empty()) {
-        return false;
+std::vector<MenuItem> build_create_session_menu(const SessionState& session) {
+    std::vector<MenuItem> items;
+    items.push_back({"Devices...", kIdDevices});
+    if (session.is_empty()) {
+        items.push_back({"View preset preview (empty - select metrics first)", kIdPreview});
+    } else {
+        items.push_back({"View preset preview (" + session.summary() + ")", kIdPreview});
     }
-    int value = 0;
-    for (char c : token) {
-        if (c < '0' || c > '9') {
-            return false;
+    items.push_back({"Back", kIdBack});
+    return items;
+}
+
+std::vector<MenuItem> build_device_list_menu(const std::vector<Device>& devices) {
+    std::vector<MenuItem> items;
+    items.reserve(devices.size() + 1);
+    for (const auto& d : devices) {
+        std::string label = d.slot + "  " + d.kind + "  " + d.identity;
+        if (!d.supported) {
+            label += "  [unsupported]";
         }
-        value = value * 10 + (c - '0');
+        items.push_back({std::move(label), d.slot});
     }
-    out_idx = value;
-    return true;
+    items.push_back({"Back", kIdBack});
+    return items;
 }
 
-void prompt(std::ostream& out, const RenderConfig& cfg) {
-    const auto ansi = make_ansi(cfg);
-    out << ansi.bold << "avail> " << ansi.reset;
+// Per-device metric menu. Metric ids: "m:<index>" (measure) or "c:<index>"
+// (configure). Housekeeping rows use kIdClear / kIdBack.
+std::vector<MenuItem> build_device_detail_menu(const Device& device, const SessionState& session,
+                                               bool with_session) {
+    std::vector<MenuItem> items;
+    if (!device.supported) {
+        items.push_back({"Back", kIdBack});
+        return items;
+    }
+    items.reserve(device.measure.size() + device.configure.size() + 2);
+    for (std::size_t i = 0; i < device.measure.size(); ++i) {
+        const auto& m = device.measure[i];
+        const bool on = with_session && session.has_metric(device.slot, m.name);
+        std::string label = std::string{with_session ? (on ? "[x] " : "[ ] ") : "    "} + m.name;
+        if (m.unit) {
+            label += " (" + *m.unit + ")";
+        }
+        items.push_back({std::move(label), "m:" + std::to_string(i)});
+    }
+    for (std::size_t i = 0; i < device.configure.size(); ++i) {
+        const auto& m = device.configure[i];
+        const bool on = with_session && session.has_configure(device.slot, m.name);
+        std::string label = std::string{with_session ? (on ? "[x] " : "[ ] ") : "    "} + m.name;
+        if (m.unit) {
+            label += " (" + *m.unit + ")";
+        }
+        items.push_back({std::move(label), "c:" + std::to_string(i)});
+    }
+    if (with_session) {
+        items.push_back({"Clear this device's selections", kIdClear});
+    }
+    items.push_back({"Back", kIdBack});
+    return items;
 }
 
-void render_screen(std::ostream& out, const RenderConfig& cfg, Screen current,
-                   IDeviceCatalog& catalog, CatalogMode mode, const SessionState& session,
-                   const std::vector<Device>& devices, std::size_t active_device,
-                   std::size_t active_metric_in_device) {
-    switch (current) {
-    case Screen::Welcome:
-        render_welcome(out, cfg);
-        break;
-    case Screen::MainMenu:
-        render_main_menu(out, cfg);
-        break;
-    case Screen::CreateModeSelect:
-        render_mode_select(out, cfg);
-        break;
-    case Screen::CreateSession:
-        render_create_session(out, cfg, mode, catalog.label(), session);
-        break;
-    case Screen::CreateDeviceList:
-        render_device_list(out, cfg, devices, true);
-        break;
-    case Screen::CreateDeviceDetail:
-        if (active_device < devices.size()) {
-            render_device_detail(out, cfg, devices[active_device], &session);
+std::vector<MenuItem> build_preset_preview_menu() {
+    return {
+        {"Clear preset", kIdClear},
+        {"Back", kIdBack},
+    };
+}
+
+std::vector<MenuItem> build_confirm_menu() {
+    return {
+        {"No", kIdNo},
+        {"Yes", kIdYes},
+    };
+}
+
+bool menu_has_id(const MenuController& menu, std::string_view id) noexcept {
+    for (const auto& it : menu.items()) {
+        if (it.id == id) {
+            return true;
         }
-        break;
-    case Screen::PresetPreview:
-        render_preset_preview(out, cfg, session, devices);
-        out << synthesize_command(session, devices) << '\n';
-        break;
-    case Screen::ConfirmClearAll:
-        render_confirm(out, cfg, "Clear ALL preset selections?");
-        break;
-    case Screen::ConfirmClearDevice:
-        render_confirm(out, cfg, "Clear this device's selections?");
-        break;
-    case Screen::InspectDeviceList:
-        render_device_list(out, cfg, devices, true);
-        break;
-    case Screen::InspectDeviceDetail:
-        if (active_device < devices.size()) {
-            render_device_detail(out, cfg, devices[active_device], nullptr);
-        }
-        break;
-    case Screen::MetricDetail:
-        if (active_device < devices.size()) {
-            const auto& dev = devices[active_device];
-            const auto total_measure = dev.measure.size();
-            if (active_metric_in_device < total_measure) {
-                render_metric_detail(out, cfg, dev.measure[active_metric_in_device]);
-            } else if (active_metric_in_device - total_measure < dev.configure.size()) {
-                render_metric_detail(out, cfg,
-                                     dev.configure[active_metric_in_device - total_measure]);
+    }
+    return false;
+}
+
+// Move selection to the first item whose id matches @c id. No-op if absent.
+void select_by_id(MenuController& menu, std::string_view id) noexcept {
+    for (std::size_t i = 0; i < menu.items().size(); ++i) {
+        if (menu.items()[i].id == id) {
+            while (menu.selected_index() != i) {
+                menu.move_down();
             }
+            return;
         }
-        break;
-    case Screen::Exit:
-        out << "Goodbye.\n";
-        break;
     }
 }
 
@@ -128,6 +157,14 @@ App::App(IDeviceCatalog& online, IDeviceCatalog& offline, IMetricCatalog& online
 }
 
 int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig& cfg) {
+    (void) in;  // raw mode reads from STDIN_FILENO directly
+
+    RawModeGuard raw_guard;
+    if (!raw_guard.active()) {
+        out << "avail interactive requires a TTY on stdin.\n";
+        return 2;
+    }
+
     Screen current = Screen::Welcome;
     Screen metric_detail_return = Screen::MainMenu;
     CatalogMode mode = CatalogMode::Online;
@@ -142,192 +179,306 @@ int App::run_interactive(std::istream& in, std::ostream& out, const RenderConfig
         return mode == CatalogMode::Online ? m_online : m_offline;
     };
 
-    while (current != Screen::Exit) {
-        std::vector<Device> devices = active_catalog().devices();
-        render_screen(out, cfg, current, active_catalog(), mode, session, devices, active_device,
-                      active_metric);
-
-        if (current == Screen::CreateDeviceDetail || current == Screen::InspectDeviceDetail) {
-            // explicit listing of extra commands inline above; nothing else to render
-        }
-
-        prompt(out, cfg);
-        std::string raw;
-        if (!std::getline(in, raw)) {
+    auto render_header = [&](const std::vector<Device>& devices) {
+        out << kClearScreen;
+        switch (current) {
+        case Screen::Welcome:
+            render_welcome_header(out, cfg);
+            out << '\n' << "Press Enter to continue (q to quit).\n";
+            break;
+        case Screen::MainMenu:
+            render_main_menu_header(out, cfg);
+            break;
+        case Screen::CreateModeSelect:
+            render_mode_select_header(out, cfg);
+            break;
+        case Screen::CreateSession:
+            render_create_session_header(out, cfg, mode, active_catalog().label(), session);
+            break;
+        case Screen::CreateDeviceList:
+        case Screen::InspectDeviceList:
+            render_device_list_header(out, cfg);
+            break;
+        case Screen::CreateDeviceDetail:
+            if (active_device < devices.size()) {
+                render_device_detail_header(out, cfg, devices[active_device], &session);
+            }
+            break;
+        case Screen::InspectDeviceDetail:
+            if (active_device < devices.size()) {
+                render_device_detail_header(out, cfg, devices[active_device], nullptr);
+            }
+            break;
+        case Screen::PresetPreview:
+            render_preset_preview_header(out, cfg, session);
+            out << synthesize_command(session, devices) << '\n' << '\n';
+            break;
+        case Screen::ConfirmClearAll:
+            render_confirm(out, cfg, "Clear ALL preset selections?");
+            out << '\n';
+            break;
+        case Screen::ConfirmClearDevice:
+            render_confirm(out, cfg, "Clear this device's selections?");
+            out << '\n';
+            break;
+        case Screen::MetricDetail:
+            if (active_device < devices.size()) {
+                const auto& dev = devices[active_device];
+                const auto total_measure = dev.measure.size();
+                if (active_metric < total_measure) {
+                    render_metric_detail(out, cfg, dev.measure[active_metric]);
+                } else if (active_metric - total_measure < dev.configure.size()) {
+                    render_metric_detail(out, cfg, dev.configure[active_metric - total_measure]);
+                }
+            }
+            out << '\n' << "(Press Enter, Esc, q, or b to go back)\n";
+            break;
+        case Screen::Exit:
             break;
         }
-        const std::string token = lower(trim(raw));
+    };
 
-        // CreateDeviceDetail: digit = toggle metric, "v <n>" = view metric, "c" = clear, "b" back.
-        if (current == Screen::CreateDeviceDetail && active_device < devices.size()) {
-            const auto& dev = devices[active_device];
-            const auto total_measure = dev.measure.size();
-            const auto total = total_measure + dev.configure.size();
-            int idx = 0;
-            if (parse_index(token, idx) && idx >= 1 && static_cast<std::size_t>(idx) <= total) {
-                const std::size_t z = static_cast<std::size_t>(idx) - 1;
-                if (z < total_measure) {
-                    session.toggle_metric(dev.slot, dev.measure[z].name);
-                } else {
-                    session.toggle_configure(dev.slot, dev.configure[z - total_measure].name);
-                }
-                continue;
+    while (current != Screen::Exit) {
+        std::vector<Device> devices = active_catalog().devices();
+
+        // Non-menu screens: render once and read a single key.
+        if (current == Screen::Welcome) {
+            render_header(devices);
+            out.flush();
+            const auto ev = read_key();
+            if (ev.key == Key::Enter) {
+                current = Screen::MainMenu;
+            } else if (ev.key == Key::Esc ||
+                       (ev.key == Key::Char && (ev.ch == 'q' || ev.ch == 'Q'))) {
+                current = Screen::Exit;
             }
-            if (token.rfind("v ", 0) == 0) {
-                int sub = 0;
-                if (parse_index(std::string_view(token).substr(2), sub) && sub >= 1 &&
-                    static_cast<std::size_t>(sub) <= total) {
-                    active_metric = static_cast<std::size_t>(sub) - 1;
-                    metric_detail_return = Screen::CreateDeviceDetail;
-                    current = Screen::MetricDetail;
-                    continue;
-                }
+            continue;
+        }
+        if (current == Screen::MetricDetail) {
+            render_header(devices);
+            out.flush();
+            const auto ev = read_key();
+            if (ev.key == Key::Enter || ev.key == Key::Esc ||
+                (ev.key == Key::Char && (ev.ch == 'q' || ev.ch == 'Q' || ev.ch == 'b'))) {
+                current = metric_detail_return;
             }
-            if (token == "c" || token == "clear") {
-                current = Screen::ConfirmClearDevice;
-                continue;
-            }
-            if (token == "b" || token == "back" || token == "q" || token == "quit") {
-                current = Screen::CreateDeviceList;
-                continue;
-            }
-            render_invalid_input(out, cfg, "Type a metric number, 'v N' to view, 'c' clear, 'b'.");
             continue;
         }
 
-        // InspectDeviceDetail: "v N" to view, "b" back.
-        if (current == Screen::InspectDeviceDetail && active_device < devices.size()) {
-            const auto& dev = devices[active_device];
-            const auto total = dev.measure.size() + dev.configure.size();
-            if (token.rfind("v ", 0) == 0) {
-                int sub = 0;
-                if (parse_index(std::string_view(token).substr(2), sub) && sub >= 1 &&
-                    static_cast<std::size_t>(sub) <= total) {
-                    active_metric = static_cast<std::size_t>(sub) - 1;
-                    metric_detail_return = Screen::InspectDeviceDetail;
-                    current = Screen::MetricDetail;
+        // Menu screens: build menu, then redraw on every keypress until commit.
+        std::vector<MenuItem> items;
+        switch (current) {
+        case Screen::MainMenu:
+            items = build_main_menu();
+            break;
+        case Screen::CreateModeSelect:
+            items = build_mode_select_menu();
+            break;
+        case Screen::CreateSession:
+            items = build_create_session_menu(session);
+            break;
+        case Screen::CreateDeviceList:
+        case Screen::InspectDeviceList:
+            items = build_device_list_menu(devices);
+            break;
+        case Screen::CreateDeviceDetail:
+            if (active_device < devices.size()) {
+                items = build_device_detail_menu(devices[active_device], session, true);
+            }
+            break;
+        case Screen::InspectDeviceDetail:
+            if (active_device < devices.size()) {
+                items = build_device_detail_menu(devices[active_device], session, false);
+            }
+            break;
+        case Screen::PresetPreview:
+            items = build_preset_preview_menu();
+            break;
+        case Screen::ConfirmClearAll:
+        case Screen::ConfirmClearDevice:
+            items = build_confirm_menu();
+            break;
+        default:
+            break;
+        }
+
+        MenuController menu(std::move(items));
+        bool committed = false;
+        bool exit_now = false;
+
+        while (!committed && !exit_now) {
+            render_header(devices);
+            menu.render(out, cfg);
+            out.flush();
+
+            const auto ev = read_key();
+            if (ev.key == Key::Up) {
+                menu.move_up();
+                continue;
+            }
+            if (ev.key == Key::Down) {
+                menu.move_down();
+                continue;
+            }
+            if (ev.key == Key::Enter) {
+                committed = true;
+                continue;
+            }
+            const bool esc_or_q =
+                ev.key == Key::Esc || (ev.key == Key::Char && (ev.ch == 'q' || ev.ch == 'Q'));
+            const bool back_char = ev.key == Key::Char && ev.ch == 'b';
+            if (esc_or_q || back_char) {
+                if (menu_has_id(menu, kIdBack)) {
+                    select_by_id(menu, kIdBack);
+                    committed = true;
+                } else if (esc_or_q) {
+                    exit_now = true;
+                }
+                continue;
+            }
+            // y / n shortcuts on confirm screens.
+            if ((current == Screen::ConfirmClearAll || current == Screen::ConfirmClearDevice) &&
+                ev.key == Key::Char) {
+                if (ev.ch == 'y' || ev.ch == 'Y') {
+                    select_by_id(menu, kIdYes);
+                    committed = true;
+                    continue;
+                }
+                if (ev.ch == 'n' || ev.ch == 'N') {
+                    select_by_id(menu, kIdNo);
+                    committed = true;
                     continue;
                 }
             }
-            if (token == "b" || token == "back" || token == "q" || token == "quit") {
+        }
+
+        if (exit_now) {
+            current = Screen::Exit;
+            continue;
+        }
+
+        const std::string id = menu.current().id;
+
+        if (current == Screen::MainMenu) {
+            if (id == kIdCreate) {
+                current = Screen::CreateModeSelect;
+            } else if (id == kIdInspect) {
                 current = Screen::InspectDeviceList;
-                continue;
+            } else if (id == kIdExit) {
+                current = Screen::Exit;
             }
-            render_invalid_input(out, cfg, "Type 'v N' to view a metric, 'b' to go back.");
             continue;
         }
-
-        // Device lists: digit selects device, last index is Back.
-        if (current == Screen::CreateDeviceList || current == Screen::InspectDeviceList) {
-            int idx = 0;
-            if (parse_index(token, idx) && idx >= 1 &&
-                static_cast<std::size_t>(idx) <= devices.size()) {
-                active_device = static_cast<std::size_t>(idx) - 1;
-                current = (current == Screen::CreateDeviceList) ? Screen::CreateDeviceDetail
-                                                                : Screen::InspectDeviceDetail;
-                continue;
-            }
-            if (parse_index(token, idx) && static_cast<std::size_t>(idx) == devices.size() + 1) {
-                current = (current == Screen::CreateDeviceList) ? Screen::CreateSession
-                                                                : Screen::MainMenu;
-                continue;
-            }
-            if (token == "b" || token == "back" || token == "q" || token == "quit") {
-                current = (current == Screen::CreateDeviceList) ? Screen::CreateSession
-                                                                : Screen::MainMenu;
-                continue;
-            }
-            render_invalid_input(out, cfg, "Type a device number or 'b'.");
-            continue;
-        }
-
-        // CreateModeSelect handled specially to set mode + clear session.
         if (current == Screen::CreateModeSelect) {
-            if (token == "1") {
+            if (id == kIdOnline) {
                 mode = CatalogMode::Online;
                 session.clear_all();
                 current = Screen::CreateSession;
-                continue;
-            }
-            if (token == "2") {
+            } else if (id == kIdOffline) {
                 mode = CatalogMode::Offline;
                 session.clear_all();
                 current = Screen::CreateSession;
-                continue;
-            }
-            if (token == "3" || token == "b" || token == "back" || token == "q" ||
-                token == "quit") {
+            } else if (id == kIdBack) {
                 current = Screen::MainMenu;
-                continue;
             }
-            render_invalid_input(out, cfg, "Choose 1, 2 or 3.");
             continue;
         }
-
-        // CreateSession: 1 -> device list, 2 -> preview (only when non-empty), 3 -> back to main.
         if (current == Screen::CreateSession) {
-            if (token == "1") {
+            if (id == kIdDevices) {
+                current = Screen::CreateDeviceList;
+            } else if (id == kIdPreview) {
+                if (!session.is_empty()) {
+                    current = Screen::PresetPreview;
+                }
+            } else if (id == kIdBack) {
+                session.clear_all();
+                current = Screen::MainMenu;
+            }
+            continue;
+        }
+        if (current == Screen::CreateDeviceList || current == Screen::InspectDeviceList) {
+            if (id == kIdBack) {
+                current = (current == Screen::CreateDeviceList) ? Screen::CreateSession
+                                                                : Screen::MainMenu;
+                continue;
+            }
+            for (std::size_t i = 0; i < devices.size(); ++i) {
+                if (devices[i].slot == id) {
+                    active_device = i;
+                    current = (current == Screen::CreateDeviceList) ? Screen::CreateDeviceDetail
+                                                                    : Screen::InspectDeviceDetail;
+                    break;
+                }
+            }
+            continue;
+        }
+        if (current == Screen::CreateDeviceDetail) {
+            if (id == kIdBack) {
                 current = Screen::CreateDeviceList;
                 continue;
             }
-            if (token == "2") {
-                if (session.is_empty()) {
-                    render_invalid_input(out, cfg, "Preset is empty - select metrics first.");
-                    continue;
+            if (id == kIdClear) {
+                current = Screen::ConfirmClearDevice;
+                continue;
+            }
+            if (active_device < devices.size() && id.size() > 2 && id[1] == ':') {
+                const auto& dev = devices[active_device];
+                const std::size_t k = std::stoull(id.substr(2));
+                if (id[0] == 'm' && k < dev.measure.size()) {
+                    session.toggle_metric(dev.slot, dev.measure[k].name);
+                } else if (id[0] == 'c' && k < dev.configure.size()) {
+                    session.toggle_configure(dev.slot, dev.configure[k].name);
                 }
-                current = Screen::PresetPreview;
-                continue;
             }
-            if (token == "3" || token == "b" || token == "back" || token == "q" ||
-                token == "quit") {
-                session.clear_all();
-                current = Screen::MainMenu;
-                continue;
-            }
-            render_invalid_input(out, cfg, "Choose 1, 2 or 3.");
             continue;
         }
-
+        if (current == Screen::InspectDeviceDetail) {
+            if (id == kIdBack) {
+                current = Screen::InspectDeviceList;
+                continue;
+            }
+            if (active_device < devices.size() && id.size() > 2 && id[1] == ':') {
+                const auto& dev = devices[active_device];
+                const std::size_t k = std::stoull(id.substr(2));
+                const auto total_measure = dev.measure.size();
+                if (id[0] == 'm' && k < total_measure) {
+                    active_metric = k;
+                    metric_detail_return = Screen::InspectDeviceDetail;
+                    current = Screen::MetricDetail;
+                } else if (id[0] == 'c' && k < dev.configure.size()) {
+                    active_metric = total_measure + k;
+                    metric_detail_return = Screen::InspectDeviceDetail;
+                    current = Screen::MetricDetail;
+                }
+            }
+            continue;
+        }
         if (current == Screen::PresetPreview) {
-            if (token == "1" || token == "clear" || token == "clear_all") {
+            if (id == kIdClear) {
                 current = Screen::ConfirmClearAll;
-                continue;
-            }
-            if (token == "2" || token == "b" || token == "back") {
+            } else if (id == kIdBack) {
                 current = Screen::CreateSession;
-                continue;
             }
-            render_invalid_input(out, cfg, "Choose 1 to clear or 2 to go back.");
             continue;
         }
-
         if (current == Screen::ConfirmClearAll) {
-            if (token == "y" || token == "yes") {
+            if (id == kIdYes) {
                 session.clear_all();
             }
             current = Screen::CreateSession;
             continue;
         }
         if (current == Screen::ConfirmClearDevice) {
-            if (token == "y" || token == "yes") {
-                if (active_device < devices.size()) {
-                    session.clear_device(devices[active_device].slot);
-                }
+            if (id == kIdYes && active_device < devices.size()) {
+                session.clear_device(devices[active_device].slot);
             }
             current = Screen::CreateDeviceDetail;
             continue;
         }
-        if (current == Screen::MetricDetail) {
-            current = metric_detail_return;
-            continue;
-        }
-
-        // Main menu / Welcome.
-        current = next_screen(current, token);
     }
 
-    render_screen(out, cfg, Screen::Exit, active_catalog(), mode, session,
-                  active_catalog().devices(), active_device, active_metric);
+    out << kClearScreen;
+    out << "Goodbye.\n";
     return 0;
 }
 
@@ -352,7 +503,6 @@ int App::run_demo_frames(std::ostream& out, const RenderConfig& cfg) {
         render_device_detail(out, cfg, online[0], &session);
         sep();
     }
-    // Toggle one metric to make preview interesting.
     if (!online.empty() && !online[0].measure.empty()) {
         session.toggle_metric(online[0].slot, online[0].measure[0].name);
     }
