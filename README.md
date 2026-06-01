@@ -28,7 +28,7 @@ Prerequisites:
 - CMake >= 3.21 and a C++20 compiler.
 - A ROCm install (the metric catalog dependency runs `find_package(amd_smi)`
   at configure time). Point `CMAKE_PREFIX_PATH` at it, e.g. `/opt/rocm-7.2.0`.
-- The `profiler-catalog` repo checked out at `$HOME/work/profiler-catalog`.
+- The `profiling-catalogue` repo checked out at `$HOME/work/profiling-catalogue`.
   It is the single source of truth for metric descriptors and is pulled in
   source-only via `FetchContent` (`SOURCE_DIR`), so no network fetch - but
   the directory must exist.
@@ -41,7 +41,7 @@ cmake --build build --preset default
 ctest --preset default --output-on-failure
 ```
 
-This builds the `avail` REPL and runs the test suite (195 tests).
+This builds the `avail` REPL and runs the test suite.
 
 Debug or coverage variants:
 
@@ -95,6 +95,5 @@ source and pass instances by reference to the `App` constructor in
 include/avail/   public headers (device, session, render, screens,
                  synthesize, interfaces, mocks, app)
 src/             implementations + main.cpp
-tests/           gtest+gmock suites (8 suites, 195 tests)
-third_party/     CLI11 single-header (vendored)
+tests/           gtest+gmock suites (8 suites)
 ```

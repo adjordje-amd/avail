@@ -1,4 +1,3 @@
-#include "CLI11.hpp"
 #include "avail/app.h"
 #include "avail/input.h"
 #include "avail/mocks_offline.h"
@@ -7,17 +6,47 @@
 #include "avail/version.h"
 
 #include <iostream>
+#include <string_view>
+
+namespace {
+
+void print_usage(std::ostream& out) {
+    out << "avail - prototype rocprof-sys-avail UX (skeleton)\n"
+           "Usage: avail [OPTIONS]\n"
+           "\n"
+           "Options:\n"
+           "  -h, --help      Print this help message and exit\n"
+           "  --version       Display program version information and exit\n"
+           "  --demo-frames   Print canned walk of every screen and exit\n"
+           "  --no-color      Disable ANSI color in output\n";
+}
+
+}  // namespace
 
 int main(int argc, char** argv) {
-    CLI::App app{"avail - prototype rocprof-sys-avail UX (skeleton)"};
-    app.set_version_flag("--version", std::string("avail ") + avail::version_string());
-
     bool demo_frames = false;
     bool no_color = false;
-    app.add_flag("--demo-frames", demo_frames, "Print canned walk of every screen and exit");
-    app.add_flag("--no-color", no_color, "Disable ANSI color in output");
 
-    CLI11_PARSE(app, argc, argv);
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view arg{argv[i]};
+        if (arg == "-h" || arg == "--help") {
+            print_usage(std::cout);
+            return 0;
+        }
+        if (arg == "--version") {
+            std::cout << "avail " << avail::version_string() << "\n";
+            return 0;
+        }
+        if (arg == "--demo-frames") {
+            demo_frames = true;
+        } else if (arg == "--no-color") {
+            no_color = true;
+        } else {
+            std::cerr << "avail: unrecognized option '" << arg << "'\n";
+            print_usage(std::cerr);
+            return 1;
+        }
+    }
 
     avail::RenderConfig cfg;
     cfg.color = !no_color && avail::stdout_is_tty();

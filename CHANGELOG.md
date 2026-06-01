@@ -16,6 +16,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   description.
 - `MenuItem` gains an optional `description` field (default-empty);
   unrelated menus keep their existing 2-argument construction.
+- Replace CLI11 with a small hand-rolled `argv` parser in `main.cpp`;
+  same flags (`--version`, `--demo-frames`, `--no-color`, `--help`).
+- Rename all C++ sources from `.cc` to `.cpp`.
+- Point the metric-catalog FetchContent dependency at the renamed
+  `profiling-catalogue` repo (was `profiler-catalog`).
+
+### Removed
+
+- Vendored `third_party/CLI11` single-header dependency.
 
 ## [0.1.0] - 2026-05-28
 

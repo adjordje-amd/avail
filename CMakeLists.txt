@@ -19,17 +19,12 @@ option(AVAIL_COVERAGE "Enable coverage instrumentation" OFF)
 
 include(FetchContent)
 
-# profiler-catalog (INTERFACE library, single source of truth for metric descriptors).
+# profiling-catalogue (INTERFACE library, single source of truth for metric descriptors).
 FetchContent_Declare(
     profcat
-    SOURCE_DIR $ENV{HOME}/work/profiler-catalog
+    SOURCE_DIR $ENV{HOME}/work/profiling-catalogue
 )
 FetchContent_MakeAvailable(profcat)
-
-# Vendored CLI11 (header-only, no warnings policy applied).
-add_library(cli11 INTERFACE)
-target_include_directories(cli11 SYSTEM INTERFACE
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/CLI11)
 
 # Core library.
 add_library(avail_core STATIC
@@ -61,7 +56,7 @@ target_compile_definitions(avail_core PUBLIC
 
 # Main executable.
 add_executable(avail src/main.cpp)
-target_link_libraries(avail PRIVATE avail_core cli11)
+target_link_libraries(avail PRIVATE avail_core)
 target_compile_options(avail PRIVATE
     -Wall -Wextra -Wpedantic -Werror
 )
