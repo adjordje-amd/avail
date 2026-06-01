@@ -22,7 +22,7 @@ namespace avail {
  * Top-level REPL driver. Holds non-owning references to provider interfaces.
  *
  * Lifetimes of provider instances are managed by the caller (typically
- * main.cc wires concrete mocks on the stack).
+ * main.cpp wires concrete mocks on the stack).
  */
 class App {
   public:

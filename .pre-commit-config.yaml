@@ -14,5 +14,5 @@ repos:
     rev: v18.1.8
     hooks:
       - id: clang-format
-        files: \.(h|hpp|cc|cpp)$
+        files: \.(h|hpp|cpp)$
         exclude: ^third_party/

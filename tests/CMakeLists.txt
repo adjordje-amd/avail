@@ -1,12 +1,12 @@
 add_executable(avail_tests
-    test_session.cc
-    test_synthesize.cc
-    test_render.cc
-    test_screens.cc
-    test_mocks.cc
-    test_demo_walker.cc
-    test_menu.cc
-    test_input.cc
+    test_session.cpp
+    test_synthesize.cpp
+    test_render.cpp
+    test_screens.cpp
+    test_mocks.cpp
+    test_demo_walker.cpp
+    test_menu.cpp
+    test_input.cpp
 )
 
 target_link_libraries(avail_tests PRIVATE

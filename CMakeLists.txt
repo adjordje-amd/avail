@@ -33,16 +33,16 @@ target_include_directories(cli11 SYSTEM INTERFACE
 
 # Core library.
 add_library(avail_core STATIC
-    src/render.cc
-    src/screens.cc
-    src/session.cc
-    src/synthesize.cc
-    src/app.cc
-    src/input.cc
-    src/menu.cc
-    src/mocks_online.cc
-    src/mocks_offline.cc
-    src/version.cc
+    src/render.cpp
+    src/screens.cpp
+    src/session.cpp
+    src/synthesize.cpp
+    src/app.cpp
+    src/input.cpp
+    src/menu.cpp
+    src/mocks_online.cpp
+    src/mocks_offline.cpp
+    src/version.cpp
 )
 
 target_include_directories(avail_core PUBLIC
@@ -60,7 +60,7 @@ target_compile_definitions(avail_core PUBLIC
 )
 
 # Main executable.
-add_executable(avail src/main.cc)
+add_executable(avail src/main.cpp)
 target_link_libraries(avail PRIVATE avail_core cli11)
 target_compile_options(avail PRIVATE
     -Wall -Wextra -Wpedantic -Werror

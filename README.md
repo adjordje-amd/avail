@@ -23,28 +23,47 @@ injection.
 
 ## Build
 
-Requires CMake >= 3.21, a C++20 compiler, network access for the first
-configure (FetchContent pulls googletest v1.14.0).
+Prerequisites:
+
+- CMake >= 3.21 and a C++20 compiler.
+- A ROCm install (the metric catalog dependency runs `find_package(amd_smi)`
+  at configure time). Point `CMAKE_PREFIX_PATH` at it, e.g. `/opt/rocm-7.2.0`.
+- The `profiler-catalog` repo checked out at `$HOME/work/profiler-catalog`.
+  It is the single source of truth for metric descriptors and is pulled in
+  source-only via `FetchContent` (`SOURCE_DIR`), so no network fetch - but
+  the directory must exist.
+- Network access for the first configure (FetchContent clones googletest
+  v1.14.0).
 
 ```
-cmake --preset default
+cmake --preset default -DCMAKE_PREFIX_PATH=/opt/rocm-7.2.0
 cmake --build build --preset default
 ctest --preset default --output-on-failure
 ```
 
+This builds the `avail` REPL and runs the test suite (195 tests).
+
 Debug or coverage variants:
 
 ```
-cmake --preset debug    && cmake --build build-debug
-cmake --preset coverage && cmake --build build-coverage
+cmake --preset debug    -DCMAKE_PREFIX_PATH=/opt/rocm-7.2.0 && cmake --build build-debug
+cmake --preset coverage -DCMAKE_PREFIX_PATH=/opt/rocm-7.2.0 && cmake --build build-coverage
 ```
 
-## Run
+## Run the example
+
+The fastest way to see the proposed UX is the non-interactive demo, which
+prints a canned walk of every screen and exits:
 
 ```
-./build/avail                       # interactive REPL
-./build/avail --demo-frames         # walk every screen, then exit
-./build/avail --demo-frames --no-color
+./build/avail --demo-frames            # walk every screen, then exit
+./build/avail --demo-frames --no-color # same, no ANSI color
+```
+
+Other entry points:
+
+```
+./build/avail                          # interactive REPL
 ./build/avail --version
 ./build/avail --help
 ```
@@ -67,7 +86,7 @@ a device -> toggle metrics -> back to session screen -> `2` (preview).
 Each provider is a 1-method interface in `include/avail/interfaces.h`.
 To wire a real backend, implement the interfaces against your data
 source and pass instances by reference to the `App` constructor in
-`src/main.cc`. No singletons, no service locator: lifetime stays in
+`src/main.cpp`. No singletons, no service locator: lifetime stays in
 `main`.
 
 ## Layout
@@ -75,7 +94,7 @@ source and pass instances by reference to the `App` constructor in
 ```
 include/avail/   public headers (device, session, render, screens,
                  synthesize, interfaces, mocks, app)
-src/             implementations + main.cc
-tests/           gtest+gmock suites (5 suites, >50 tests)
+src/             implementations + main.cpp
+tests/           gtest+gmock suites (8 suites, 195 tests)
 third_party/     CLI11 single-header (vendored)
 ```

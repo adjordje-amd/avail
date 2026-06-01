@@ -199,7 +199,7 @@ void render_preset_preview_header(std::ostream& out, const RenderConfig& cfg,
 
 // --- Footer-hint accessors ---
 //
-// Exposed for the per-iteration redraw loop in app.cc so every interactive
+// Exposed for the per-iteration redraw loop in app.cpp so every interactive
 // screen closes with the same chrome the demo walker emits.
 [[nodiscard]] std::string_view footer_hints_for_main_menu() noexcept;
 [[nodiscard]] std::string_view footer_hints_for_mode_select() noexcept;
